@@ -34,6 +34,7 @@ fun MainHomeScreen(
     state: VideoListState,
     folderPermissionGranted: Boolean,
     cameraPermissionGranted: Boolean,
+    submissionCount: Int,
     onLoadVideos: () -> Unit,
     onRequestCameraPermission: () -> Unit,
     onOpenRecentEvents: () -> Unit,
@@ -49,7 +50,8 @@ fun MainHomeScreen(
     )
     val statusSummary = HomeStatusSummary.from(
         savedMediaItemCount = state.savedMediaItemCount,
-        currentFolderVideoCount = state.videos.size
+        currentFolderVideoCount = state.videos.size,
+        submissionCount = submissionCount
     )
 
     SafeClipScaffold {
@@ -112,7 +114,7 @@ fun MainHomeScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HomeShortcut("제출 내역", "이력 확인", Modifier.weight(1f), onClick = onOpenStatus)
+                HomeShortcut("제출 내역", statusSummary.submissionCountText, Modifier.weight(1f), onClick = onOpenStatus)
                 HomeShortcut("설정", "환경 관리", Modifier.weight(1f), onClick = onOpenSettings)
             }
 
@@ -154,7 +156,11 @@ private fun PermissionStatusTile(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            Text(
+                text = label,
+                fontWeight = FontWeight.Bold,
+                fontSize = HomeTileTextStyle.TITLE_FONT_SIZE_SP.sp
+            )
             Box(
                 modifier = Modifier
                     .size(11.dp)
@@ -163,8 +169,8 @@ private fun PermissionStatusTile(
         }
         Text(
             text = if (granted) "ON" else "OFF",
-            fontWeight = FontWeight.Bold,
-            fontSize = 20.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP.sp
         )
         SecondaryActionButton(text = actionText, onClick = onAction, enabled = !granted)
     }
@@ -179,8 +185,16 @@ private fun FolderStatusTile(
     modifier: Modifier = Modifier
 ) {
     GlassPanel(modifier = modifier) {
-        Text(text = label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        Text(text = value, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text(
+            text = label,
+            fontWeight = FontWeight.Bold,
+            fontSize = HomeTileTextStyle.TITLE_FONT_SIZE_SP.sp
+        )
+        Text(
+            text = value,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP.sp
+        )
         SecondaryActionButton(text = "폴더 보기", onClick = onOpenFolder, enabled = enabled)
     }
 }
@@ -208,8 +222,8 @@ private fun HomeShortcut(
     onClick: () -> Unit = {}
 ) {
     GlassPanel(modifier = modifier) {
-        Text(text = title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text(text = subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        Text(text = title, fontWeight = FontWeight.Bold, fontSize = HomeTileTextStyle.TITLE_FONT_SIZE_SP.sp)
+        Text(text = subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP.sp)
         SecondaryActionButton(text = "열기", onClick = onClick)
     }
 }

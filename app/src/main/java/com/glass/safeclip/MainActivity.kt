@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -35,6 +36,14 @@ import com.glass.safeclip.data.media.AndroidSafeClipSavedMediaCounter
 import com.glass.safeclip.data.media.AndroidSafeClipSavedMediaRepository
 import com.glass.safeclip.data.media.AndroidVideoClipExporter
 import com.glass.safeclip.data.media.SafeClipEventFolder
+import com.glass.safeclip.data.profile.FirestoreUserProfileRepository
+import com.glass.safeclip.data.profile.UserProfile
+import com.glass.safeclip.data.profile.UserProfileSyncResult
+import com.glass.safeclip.data.submission.FirestoreSubmissionRepository
+import com.glass.safeclip.data.submission.SubmissionInput
+import com.glass.safeclip.data.submission.SubmissionListResult
+import com.glass.safeclip.data.submission.SubmissionLookupKey
+import com.glass.safeclip.data.submission.SubmissionSaveResult
 import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.ui.folder.FolderManagerScreen
 import com.glass.safeclip.ui.folder.FolderManagerText
@@ -76,14 +85,17 @@ class MainActivity : ComponentActivity() {
         val guestIdentityStore = GuestIdentityStore(this)
         val guestId = guestIdentityStore.loadOrCreate()
         val firebaseAuthConnector = FirebaseAuthConnector(this)
+        val userProfileRepository = FirestoreUserProfileRepository()
+        val submissionRepository = FirestoreSubmissionRepository()
 
         setContent {
             SafeClipTheme {
                 var state by remember { mutableStateOf(VideoListState()) }
                 var screen by remember { mutableStateOf<SafeClipScreen>(SafeClipScreen.first()) }
                 var selectedVideo by remember { mutableStateOf<VideoCandidate?>(null) }
-                var localSubmissions by remember { mutableStateOf<List<LocalSubmissionRecord>>(emptyList()) }
+                var submissionRecords by remember { mutableStateOf<List<LocalSubmissionRecord>>(emptyList()) }
                 var authMessage by remember { mutableStateOf<String?>(null) }
+                var syncedUserProfile by remember { mutableStateOf<UserProfile?>(null) }
                 var folderManagerMessage by remember { mutableStateOf<String?>(null) }
                 var folderManagerFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
                 var hasCameraPermission by remember { mutableStateOf(hasPermission(Manifest.permission.CAMERA)) }
@@ -209,6 +221,66 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                suspend fun syncSignedInUser(result: AuthConnectionResult) {
+                    if (result !is AuthConnectionResult.SignedIn) {
+                        showAuthResult(result)
+                        return
+                    }
+                    val profile = UserProfile(
+                        uid = result.uid,
+                        guestId = guestId,
+                        email = result.email,
+                        displayName = result.displayName,
+                        provider = result.provider
+                    )
+                    when (val syncResult = userProfileRepository.saveLogin(profile)) {
+                        is UserProfileSyncResult.Success -> {
+                            syncedUserProfile = syncResult.profile
+                            val name = result.displayName ?: result.email ?: "계정"
+                            authMessage = "$name 계정으로 연결되었습니다. ${syncResult.message}"
+                        }
+                        is UserProfileSyncResult.Failed -> {
+                            val name = result.displayName ?: result.email ?: "계정"
+                            authMessage = "$name 계정 연결은 완료됐지만 ${syncResult.message}"
+                        }
+                    }
+                }
+
+                fun loadCurrentUserProfileAsync() {
+                    val currentUser = firebaseAuthConnector.currentSignedInUser() ?: return
+                    scope.launch {
+                        syncSignedInUser(currentUser)
+                        when (val result = userProfileRepository.load(currentUser.uid)) {
+                            is UserProfileSyncResult.Success -> {
+                                syncedUserProfile = result.profile
+                            }
+                            is UserProfileSyncResult.Failed -> {
+                                authMessage = result.message
+                            }
+                        }
+                    }
+                }
+
+                fun currentSubmissionLookupKey(): SubmissionLookupKey {
+                    return firebaseAuthConnector.currentUserUid()?.let { uid ->
+                        SubmissionLookupKey.OwnerUid(uid)
+                    } ?: SubmissionLookupKey.GuestId(guestId)
+                }
+
+                fun refreshSubmissionRecordsAsync() {
+                    scope.launch {
+                        when (val result = submissionRepository.findBy(currentSubmissionLookupKey())) {
+                            is SubmissionListResult.Success -> {
+                                submissionRecords = result.records
+                                authMessage = result.message
+                            }
+                            is SubmissionListResult.Failed -> {
+                                authMessage = result.message
+                            }
+                        }
+                    }
+                }
+
                 BackHandler(enabled = SafeClipBackNavigation.previousScreen(screen) != null) {
                     goBack()
                 }
@@ -273,6 +345,8 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) {
                     refreshRuntimePermissions()
+                    loadCurrentUserProfileAsync()
+                    refreshSubmissionRecordsAsync()
                     val savedMediaCount = withContext(Dispatchers.IO) {
                         safeClipEventFolder.loadOrCreate()
                         savedMediaCounter.countSavedItems()
@@ -334,19 +408,24 @@ class MainActivity : ComponentActivity() {
                 when (val currentScreen = screen) {
                     SafeClipScreen.Start -> StartScreen(
                         guestId = guestId,
+                        linkedDisplayName = syncedUserProfile?.displayName,
+                        linkedEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
                         authMessage = authMessage,
                         onGoogleSignUp = {
                             scope.launch {
-                                showAuthResult(firebaseAuthConnector.signInWithGoogle())
+                                syncSignedInUser(firebaseAuthConnector.signInWithGoogle())
+                                refreshSubmissionRecordsAsync()
                             }
                         },
-                        onEmailSignUp = {
+                        onEmailSignUp = { email, password ->
                             scope.launch {
-                                showAuthResult(firebaseAuthConnector.startEmailSignUp())
+                                syncSignedInUser(firebaseAuthConnector.signUpWithEmail(email, password))
+                                refreshSubmissionRecordsAsync()
                             }
                         },
                         onStart = {
                             screen = SafeClipScreen.Connecting
+                            refreshSubmissionRecordsAsync()
                             if (!hasEventFolderPermission()) {
                                 eventFolderPicker.launch(null)
                             } else {
@@ -368,6 +447,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         folderPermissionGranted = hasFolderPermission(),
                         cameraPermissionGranted = hasCameraPermission,
+                        submissionCount = submissionRecords.size,
                         onLoadVideos = { folderPicker.launch(null) },
                         onRequestCameraPermission = {
                             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -388,24 +468,49 @@ class MainActivity : ComponentActivity() {
                                 openFolderManager(it)
                             }
                         },
-                        onOpenStatus = { screen = SafeClipScreen.SubmissionStatus },
-                        onOpenSettings = { screen = SafeClipScreen.Settings },
+                        onOpenStatus = {
+                            refreshSubmissionRecordsAsync()
+                            screen = SafeClipScreen.SubmissionStatus
+                        },
+                        onOpenSettings = {
+                            screen = SafeClipScreen.Settings
+                            loadCurrentUserProfileAsync()
+                        },
                         onBack = ::goBack
                     )
 
                     SafeClipScreen.Settings -> SettingsScreen(
                         guestId = guestId,
-                        linkedEmail = firebaseAuthConnector.currentUserEmail(),
+                        linkedEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
+                        linkedDisplayName = syncedUserProfile?.displayName,
+                        linkedProvider = syncedUserProfile?.provider,
                         message = authMessage,
                         onBack = ::goBack,
+                        onSignOut = {
+                            authMessage = firebaseAuthConnector.signOut()
+                            syncedUserProfile = null
+                            refreshSubmissionRecordsAsync()
+                        },
                         onDeleteAccount = {
                             scope.launch {
-                                authMessage = when (val result = firebaseAuthConnector.deleteCurrentUser()) {
+                                authMessage = when (val reauth = firebaseAuthConnector.reauthenticateCurrentUser()) {
+                                    is AuthConnectionResult.Failed -> reauth.message
+                                    is AuthConnectionResult.NeedsFirebaseSetup -> reauth.message
                                     is AuthConnectionResult.SignedIn -> {
-                                        "${result.email ?: "계정"} 회원탈퇴가 완료되었습니다."
+                                        when (val firestoreDelete = userProfileRepository.delete(reauth.uid)) {
+                                            is UserProfileSyncResult.Failed -> firestoreDelete.message
+                                            is UserProfileSyncResult.Success -> {
+                                                when (val authDelete = firebaseAuthConnector.deleteCurrentUser()) {
+                                                    is AuthConnectionResult.SignedIn -> {
+                                                        syncedUserProfile = null
+                                                        "${authDelete.email ?: "계정"} 회원탈퇴가 완료되었습니다. ${firestoreDelete.message}"
+                                                    }
+                                                    is AuthConnectionResult.NeedsFirebaseSetup -> authDelete.message
+                                                    is AuthConnectionResult.Failed -> authDelete.message
+                                                }
+                                            }
+                                        }
                                     }
-                                    is AuthConnectionResult.NeedsFirebaseSetup -> result.message
-                                    is AuthConnectionResult.Failed -> result.message
                                 }
                             }
                         }
@@ -497,8 +602,25 @@ class MainActivity : ComponentActivity() {
                         clip = currentScreen.clip,
                         onBack = ::goBack,
                         onSubmit = { draft ->
+                            scope.launch {
+                                val ownerUid = firebaseAuthConnector.currentUserUid()
+                                val input = SubmissionInput(
+                                    ownerUid = ownerUid,
+                                    video = currentScreen.video,
+                                    draft = draft,
+                                    guestId = if (ownerUid == null) guestId else syncedUserProfile?.guestId,
+                                    ownerDisplayName = syncedUserProfile?.displayName,
+                                    ownerEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail()
+                                )
+                                when (val result = submissionRepository.add(input)) {
+                                    is SubmissionSaveResult.Success -> {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            result.message,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                             val record = LocalSubmissionRecord(
-                                id = "LOCAL-${localSubmissions.size + 1}",
+                                id = result.documentId,
                                 video = currentScreen.video,
                                 title = draft.incidentType.ifBlank { "블랙박스 영상 제출" },
                                 incidentDateTime = draft.incidentDateTime,
@@ -507,13 +629,24 @@ class MainActivity : ComponentActivity() {
                                 memo = draft.memo,
                                 status = SubmissionStatus.WaitingReview
                             )
-                            localSubmissions = listOf(record) + localSubmissions
+                            refreshSubmissionRecordsAsync()
                             screen = SafeClipScreen.SubmissionStatus
+                                    }
+
+                                    is SubmissionSaveResult.Failed -> {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            result.message,
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }
                         }
                     )
 
                     SafeClipScreen.SubmissionStatus -> SubmissionStatusScreen(
-                        records = localSubmissions,
+                        records = submissionRecords,
                         onBackHome = ::goBack,
                         onOpenSubmission = { }
                     )

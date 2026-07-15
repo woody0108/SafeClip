@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "149496039682",
+    "project_id": "safeclip-fd26c",
+    "storage_bucket": "safeclip-fd26c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:149496039682:android:1ebaaccf2fad2112021a1b",
+        "android_client_info": {
+          "package_name": "com.glass.safeclip"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "149496039682-jsbtnm9khqb0p4shfer13ta6ff9lpo7l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.glass.safeclip",
+            "certificate_hash": "fd88699cad57558a783a9b60a521723fadc5c94e"
+          }
+        },
+        {
+          "client_id": "149496039682-r50kbaolbugge33lejo57hsi5rl6be5n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZHtu25KJ1ks7PDOIVAxNlFvhVREd6FsA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "149496039682-r50kbaolbugge33lejo57hsi5rl6be5n.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

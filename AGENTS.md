@@ -24,6 +24,7 @@ Keep this file short. Put details in the linked docs instead.
 - Make small, reviewable changes.
 - Check existing files before editing.
 - Discuss plans before large structure or behavior changes.
+- If a requested change is likely to tangle the code, grow scope too much, or make future work harder, tell the user before coding and recommend a simpler alternative.
 - Do not overwrite user changes without permission.
 - Keep unfinished work easy to hand off through `docs/exec-plans/`.
 

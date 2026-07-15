@@ -17,6 +17,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,12 +54,15 @@ import com.glass.safeclip.ui.theme.SafeClipTextSecondary
 @Composable
 fun StartScreen(
     guestId: String,
+    linkedDisplayName: String?,
+    linkedEmail: String?,
     authMessage: String?,
     onGoogleSignUp: () -> Unit,
-    onEmailSignUp: () -> Unit,
+    onEmailSignUp: (String, String) -> Unit,
     onStart: () -> Unit
 ) {
     var showSignUpDialog by remember { mutableStateOf(false) }
+    var showEmailDialog by remember { mutableStateOf(false) }
 
     if (showSignUpDialog) {
         SignUpDialog(
@@ -68,9 +73,19 @@ fun StartScreen(
             },
             onEmailSignUp = {
                 showSignUpDialog = false
-                onEmailSignUp()
+                showEmailDialog = true
             },
             onDismiss = { showSignUpDialog = false }
+        )
+    }
+    if (showEmailDialog) {
+        EmailSignUpDialog(
+            authMessage = authMessage,
+            onSubmit = { email, password ->
+                showEmailDialog = false
+                onEmailSignUp(email, password)
+            },
+            onDismiss = { showEmailDialog = false }
         )
     }
 
@@ -143,6 +158,8 @@ fun StartScreen(
             ) {
                 GuestIdentityRow(
                     guestId = guestId,
+                    linkedDisplayName = linkedDisplayName,
+                    linkedEmail = linkedEmail,
                     onSignUp = { showSignUpDialog = true }
                 )
                 if (!authMessage.isNullOrBlank()) {
@@ -202,9 +219,17 @@ fun ConnectingScreen() {
 @Composable
 private fun GuestIdentityRow(
     guestId: String,
+    linkedDisplayName: String?,
+    linkedEmail: String?,
     onSignUp: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val accountText = StartAccountText.from(
+        guestId = guestId,
+        displayName = linkedDisplayName,
+        email = linkedEmail
+    )
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -217,7 +242,7 @@ private fun GuestIdentityRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "ID : $guestId",
+                text = accountText.idLine,
                 modifier = Modifier.weight(1f),
                 color = Color.White,
                 fontSize = 14.sp,
@@ -225,11 +250,12 @@ private fun GuestIdentityRow(
             )
             OutlinedButton(
                 onClick = onSignUp,
+                enabled = accountText.signupEnabled,
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, SafeClipCyan.copy(alpha = 0.85f)),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = SafeClipCyan)
             ) {
-                Text(text = "회원가입", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(text = accountText.actionText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -277,6 +303,62 @@ private fun SignUpDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(text = "나중에")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EmailSignUpDialog(
+    authMessage: String?,
+    onSubmit: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "이메일 회원가입") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "이메일과 6자 이상 비밀번호로 SafeClip 계정을 연결합니다.",
+                    lineHeight = 20.sp
+                )
+                if (!authMessage.isNullOrBlank()) {
+                    Text(
+                        text = authMessage,
+                        color = SafeClipCyan,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text(text = "이메일") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(text = "비밀번호") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(email, password) }) {
+                Text(text = "가입하기", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "취소")
             }
         }
     )

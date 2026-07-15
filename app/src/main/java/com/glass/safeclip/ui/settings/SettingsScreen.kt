@@ -3,7 +3,6 @@ package com.glass.safeclip.ui.settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
@@ -27,18 +26,30 @@ import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.SafeClipScaffold
 import com.glass.safeclip.ui.components.SafeClipTopBar
 import com.glass.safeclip.ui.components.SecondaryActionButton
-import com.glass.safeclip.ui.theme.SafeClipBorder
 import com.glass.safeclip.ui.theme.SafeClipError
 
 @Composable
 fun SettingsScreen(
     guestId: String,
     linkedEmail: String?,
+    linkedDisplayName: String?,
+    linkedProvider: String?,
     message: String?,
     onBack: () -> Unit,
+    onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit
 ) {
-    val accountText = SettingsAccountText.from(guestId = guestId, linkedEmail = linkedEmail)
+    val accountText = SettingsAccountText.from(
+        guestId = guestId,
+        linkedEmail = linkedEmail,
+        linkedDisplayName = linkedDisplayName,
+        linkedProvider = linkedProvider
+    )
+    val accountActions = SettingsAccountActions.from(
+        linkedEmail = linkedEmail,
+        linkedDisplayName = linkedDisplayName,
+        linkedProvider = linkedProvider
+    )
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     if (showDeleteDialog) {
@@ -82,6 +93,13 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 21.sp
                 )
+                accountText.providerLine?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 21.sp
+                    )
+                }
                 message?.takeIf { it.isNotBlank() }?.let {
                     Text(
                         text = it,
@@ -89,6 +107,24 @@ fun SettingsScreen(
                         lineHeight = 20.sp
                     )
                 }
+            }
+
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "계정 전환",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+                Text(
+                    text = "로그아웃해도 이 기기의 Guest ID는 유지됩니다.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 21.sp
+                )
+                SecondaryActionButton(
+                    text = accountActions.signOutText,
+                    onClick = onSignOut,
+                    enabled = accountActions.signOutEnabled
+                )
             }
 
             GlassPanel(modifier = Modifier.fillMaxWidth()) {
