@@ -1,6 +1,7 @@
 package com.glass.safeclip.data.submission
 
 import com.glass.safeclip.domain.model.VideoCandidate
+import com.glass.safeclip.data.profile.UserProfile
 import com.glass.safeclip.ui.submission.SubmissionDraft
 import com.google.firebase.Timestamp
 import org.junit.Assert.assertEquals
@@ -117,5 +118,39 @@ class SubmissionDocumentTest {
         } finally {
             TimeZone.setDefault(previousTimeZone)
         }
+    }
+
+    @Test
+    fun createsGuestSubmissionOwnerLinkFieldsFromUserProfile() {
+        val profile = UserProfile(
+            uid = "uid-123",
+            guestId = "Guest-ABCD-1234",
+            email = "safeclip@example.com",
+            displayName = "SafeClip User",
+            provider = "google"
+        )
+
+        val fields = SubmissionDocument.guestOwnerLinkFields(profile)
+
+        assertEquals("uid-123", fields["ownerUid"])
+        assertEquals("Guest-ABCD-1234", fields["guestId"])
+        assertEquals("SafeClip User", fields["ownerDisplayName"])
+        assertEquals("safeclip@example.com", fields["ownerEmail"])
+        assertTrue(fields.containsKey("updatedAt"))
+    }
+
+    @Test
+    fun usesEmailAsOwnerDisplayNameWhenProfileHasNoDisplayName() {
+        val profile = UserProfile(
+            uid = "uid-123",
+            guestId = "Guest-ABCD-1234",
+            email = "safeclip@example.com",
+            displayName = null,
+            provider = "email"
+        )
+
+        val fields = SubmissionDocument.guestOwnerLinkFields(profile)
+
+        assertEquals("safeclip@example.com", fields["ownerDisplayName"])
     }
 }

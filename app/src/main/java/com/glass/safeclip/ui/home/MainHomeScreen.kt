@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.glass.safeclip.data.file.ManagedFolderFile
-import com.glass.safeclip.data.file.ManagedFolderVideoCandidate
+import com.glass.safeclip.data.file.ManagedFolderFileSummary
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
@@ -56,11 +56,13 @@ fun MainHomeScreen(
         folderPermissionGranted = folderPermissionGranted,
         cameraPermissionGranted = cameraPermissionGranted
     )
+    val eventFolderSummary = ManagedFolderFileSummary.from(eventFolderFiles)
+    val currentFolderSummary = ManagedFolderFileSummary.from(currentFolderFiles)
     val statusSummary = HomeStatusSummary.from(
-        savedEventVideoCount = eventFolderFiles.count { ManagedFolderVideoCandidate.canUseVideoActions(it) },
-        savedEventPhotoCount = eventFolderFiles.count { ManagedFolderVideoCandidate.canPreviewImage(it) },
-        currentFolderVideoCount = currentFolderFiles.count { ManagedFolderVideoCandidate.canUseVideoActions(it) },
-        currentFolderPhotoCount = currentFolderFiles.count { ManagedFolderVideoCandidate.canPreviewImage(it) },
+        savedEventVideoCount = eventFolderSummary.videoCount,
+        savedEventPhotoCount = eventFolderSummary.photoCount,
+        currentFolderVideoCount = currentFolderSummary.videoCount,
+        currentFolderPhotoCount = currentFolderSummary.photoCount,
         submissionCount = submissionCount
     )
 

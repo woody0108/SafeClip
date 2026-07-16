@@ -1,6 +1,7 @@
 package com.glass.safeclip.data.submission
 
 import com.glass.safeclip.domain.model.VideoCandidate
+import com.glass.safeclip.data.profile.UserProfile
 import com.glass.safeclip.ui.status.LocalSubmissionRecord
 import com.glass.safeclip.ui.status.SubmissionStatus
 import com.google.firebase.Timestamp
@@ -30,6 +31,16 @@ object SubmissionDocument {
             "videoStorageConsent" to input.draft.storageConsent,
             "trafficRiskDataConsent" to input.draft.dataUseConsent,
             "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+    }
+
+    fun guestOwnerLinkFields(profile: UserProfile): Map<String, Any?> {
+        return mapOf(
+            "ownerUid" to profile.uid,
+            "guestId" to profile.guestId,
+            "ownerDisplayName" to (profile.displayName ?: profile.email),
+            "ownerEmail" to profile.email,
             "updatedAt" to FieldValue.serverTimestamp()
         )
     }

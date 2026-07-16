@@ -1,7 +1,9 @@
 package com.glass.safeclip.data.submission
 
 import com.glass.safeclip.ui.status.LocalSubmissionRecord
+import com.glass.safeclip.data.profile.UserProfile
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
 
 class FirestoreSubmissionRepository(
@@ -48,6 +50,33 @@ class FirestoreSubmissionRepository(
         }
     }
 
+    suspend fun linkGuestSubmissionsToUser(profile: UserProfile): SubmissionOwnerLinkResult {
+        if (profile.guestId.isBlank()) {
+            return SubmissionOwnerLinkResult.Success(
+                updatedCount = 0,
+                message = "연결할 비회원 ID가 없습니다."
+            )
+        }
+        return try {
+            val snapshot = firestore.collection(COLLECTION_SUBMISSIONS)
+                .whereEqualTo("guestId", profile.guestId)
+                .get()
+                .await()
+            val fields = SubmissionDocument.guestOwnerLinkFields(profile)
+            snapshot.documents.forEach { document ->
+                document.reference.set(fields, SetOptions.merge()).await()
+            }
+            SubmissionOwnerLinkResult.Success(
+                updatedCount = snapshot.size(),
+                message = "비회원 제출내역 ${snapshot.size()}개가 계정 정보와 연결되었습니다."
+            )
+        } catch (exception: Exception) {
+            SubmissionOwnerLinkResult.Failed(
+                exception.localizedMessage ?: "비회원 제출내역 계정 연결에 실패했습니다."
+            )
+        }
+    }
+
     private companion object {
         const val COLLECTION_SUBMISSIONS = "submissions"
     }
@@ -73,4 +102,15 @@ sealed interface SubmissionListResult {
     data class Failed(
         val message: String
     ) : SubmissionListResult
+}
+
+sealed interface SubmissionOwnerLinkResult {
+    data class Success(
+        val updatedCount: Int,
+        val message: String
+    ) : SubmissionOwnerLinkResult
+
+    data class Failed(
+        val message: String
+    ) : SubmissionOwnerLinkResult
 }

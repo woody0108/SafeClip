@@ -5,16 +5,18 @@ Keep it factual and update it when folders or ownership boundaries change.
 
 ## Project Type
 
-- Android application project.
-- Current stack: Kotlin, Jetpack Compose, Gradle Kotlin DSL.
-- First product target: Android submission MVP for blackbox dashcam video import and upload.
+- Android application project plus a separate admin web project.
+- Android stack: Kotlin, Jetpack Compose, Gradle Kotlin DSL.
+- Admin web stack: React, Vite, TypeScript, Firebase web SDK.
+- First product target: Android submission MVP for blackbox dashcam video import and company review.
 
 ## Top-Level Structure
 
 ```text
 SafeClip/
-  app/          Android app module
-  gradle/       Gradle wrapper and version catalog
+  app/          Android app module opened by Android Studio
+  admin-web/    company admin web project
+  gradle/       Gradle wrapper and version catalog for Android
   docs/         product specs, design docs, references, and execution plans
   AGENTS.md     Codex working guide
   ARCHITECTURE.md
@@ -41,6 +43,20 @@ Planned boundaries:
 - Submission data: user-entered incident information, consent flags, upload metadata, processing status.
 - Upload/backend: Firebase first for MVP unless replaced by a custom backend.
 
+## admin-web
+
+`admin-web/` contains the company-side review web app.
+
+Initial scope:
+
+- Admin sign-in.
+- Firestore `submissions` list.
+- Submission detail view.
+- Review status updates.
+- Later photo/video viewing through Firebase Storage or a company upload server.
+
+The admin web is not an Android Studio project. It is a separate web project kept beside the Android `app/` module so the two surfaces do not get mixed together.
+
 ## docs
 
 `docs/` is the first reading point before significant work.
@@ -63,7 +79,7 @@ docs/
 
 ## Known Caution
 
-- This folder is not currently a Git repository.
+- This folder is a Git repository.
 - `local.properties` is local machine configuration and should not be treated as product source.
 - External SD card and USB reader access must go through Android's user-approved document access flow.
 - Video upload behavior must be designed with storage cost, privacy, consent, and retry failure cases in mind.

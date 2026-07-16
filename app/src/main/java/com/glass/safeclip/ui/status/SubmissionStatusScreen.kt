@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glass.safeclip.data.file.ManagedFolderFileDisplay
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.MetricStrip
 import com.glass.safeclip.ui.components.PrimaryActionButton
@@ -167,16 +168,11 @@ private fun SubmissionDetailPanel(
             fontSize = 12.sp
         )
         SecondaryActionButton(
-            text = if (isImageFile(record.video.displayName)) "사진 확인하기" else "영상 확인하기",
+            text = ManagedFolderFileDisplay.submittedFileActionText(record.video.displayName),
             onClick = onOpenSubmittedFile,
             modifier = Modifier.fillMaxWidth()
         )
     }
-}
-
-private fun isImageFile(fileName: String): Boolean {
-    val lowerName = fileName.lowercase()
-    return lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
 }
 
 private fun toneForStatus(status: SubmissionStatus): StatusTone {
@@ -190,3 +186,4 @@ private fun toneForStatus(status: SubmissionStatus): StatusTone {
         SubmissionStatus.Completed -> StatusTone.Success
     }
 }
+
