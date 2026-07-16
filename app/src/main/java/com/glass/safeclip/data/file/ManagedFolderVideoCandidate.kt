@@ -31,6 +31,14 @@ object ManagedFolderVideoCandidate {
         return file.isVideoLikeFile() || file.isJpegImage()
     }
 
+    fun canPreviewImage(file: ManagedFolderFile): Boolean {
+        return file.isJpegImage()
+    }
+
+    fun primaryPreviewActionText(file: ManagedFolderFile): String {
+        return if (canPreviewImage(file)) "사진 미리보기" else "영상재생하기"
+    }
+
     private fun ManagedFolderFile.isVideoLikeFile(): Boolean {
         return mimeType.startsWith("video/") || VideoCandidateRules.isSupportedVideoFile(displayName)
     }

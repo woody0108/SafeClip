@@ -1,12 +1,20 @@
 package com.glass.safeclip.ui.navigation
 
 import com.glass.safeclip.domain.model.VideoCandidate
+import com.glass.safeclip.data.file.ManagedFolderFile
+import com.glass.safeclip.ui.folder.FolderViewKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SafeClipBackNavigationTest {
     private val video = VideoCandidate("uri-1", "front.mp4", 1000, 2000, "EVENT")
+    private val image = ManagedFolderFile("uri-2", "capture.jpg", "image/jpeg", 512)
+
+    @Test
+    fun bootScreenHasNoBackDestination() {
+        assertNull(SafeClipBackNavigation.previousScreen(SafeClipScreen.Boot))
+    }
 
     @Test
     fun startScreenHasNoBackDestination() {
@@ -31,6 +39,16 @@ class SafeClipBackNavigationTest {
     @Test
     fun previewBackGoesToBrowser() {
         assertEquals(SafeClipScreen.VideoBrowser, SafeClipBackNavigation.previousScreen(SafeClipScreen.VideoPreview(video)))
+    }
+
+    @Test
+    fun imagePreviewBackGoesToSourceFolderManager() {
+        assertEquals(
+            SafeClipScreen.FolderManager(FolderViewKind.SafeClipSaved),
+            SafeClipBackNavigation.previousScreen(
+                SafeClipScreen.ImagePreview(image, FolderViewKind.SafeClipSaved)
+            )
+        )
     }
 
     @Test

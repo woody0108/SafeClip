@@ -11,10 +11,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glass.safeclip.data.file.ManagedFolderFile
+import com.glass.safeclip.data.file.ManagedFolderVideoCandidate
 import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.PrimaryActionButton
@@ -23,16 +29,31 @@ import com.glass.safeclip.ui.components.SafeClipTopBar
 import com.glass.safeclip.ui.components.SecondaryActionButton
 import com.glass.safeclip.ui.components.StatusChip
 import com.glass.safeclip.ui.components.StatusTone
+import com.glass.safeclip.ui.folder.FolderFileFilter
 
 @Composable
 fun VideoBrowserScreen(
     state: VideoListState,
-    selectedVideo: VideoCandidate?,
-    onSelectVideo: (VideoCandidate) -> Unit,
-    onPlayVideo: (VideoCandidate) -> Unit,
-    onSubmitVideo: (VideoCandidate) -> Unit,
+    files: List<ManagedFolderFile>,
+    onPlayVideo: (ManagedFolderFile) -> Unit,
+    onPreviewImage: (ManagedFolderFile) -> Unit,
+    onSubmitFile: (ManagedFolderFile) -> Unit,
     onBackHome: () -> Unit
 ) {
+    var selectedFilter by remember { mutableStateOf(FolderFileFilter.All) }
+    val displayFiles = files.ifEmpty {
+        state.videos.map { video ->
+            ManagedFolderFile(
+                uriString = video.uriString,
+                displayName = video.displayName,
+                mimeType = "video/mp4",
+                sizeBytes = video.sizeBytes
+            )
+        }
+    }
+    val visibleFiles = selectedFilter.apply(displayFiles)
+    var selectedFile by remember(visibleFiles) { mutableStateOf(visibleFiles.firstOrNull()) }
+
     SafeClipScaffold {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -51,7 +72,7 @@ fun VideoBrowserScreen(
                     StatusChip(label = "전체", tone = StatusTone.Info)
                 }
                 Text(
-                    text = "영상 후보 ${state.videos.size}개",
+                    text = "파일 후보 ${visibleFiles.size}개",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
                 )
@@ -65,18 +86,23 @@ fun VideoBrowserScreen(
 
             when {
                 state.isLoading -> Text("영상 목록을 불러오는 중입니다.")
-                state.videos.isEmpty() -> EmptyVideoBrowser(onBackHome = onBackHome)
+                visibleFiles.isEmpty() -> EmptyVideoBrowser(onBackHome = onBackHome)
                 else -> {
+                    VideoFileFilterTabs(
+                        selectedFilter = selectedFilter,
+                        onFilterSelected = { selectedFilter = it }
+                    )
                     VideoCandidateList(
-                        videos = state.videos,
-                        selectedVideo = selectedVideo,
-                        onSelectVideo = onSelectVideo,
+                        files = visibleFiles,
+                        selectedFile = selectedFile,
+                        onSelectFile = { selectedFile = it },
                         modifier = Modifier.weight(1f)
                     )
                     SelectedVideoPanel(
-                        video = selectedVideo ?: state.videos.first(),
+                        file = selectedFile ?: visibleFiles.first(),
                         onPlayVideo = onPlayVideo,
-                        onSubmitVideo = onSubmitVideo
+                        onPreviewImage = onPreviewImage,
+                        onSubmitFile = onSubmitFile
                     )
                 }
             }
@@ -99,32 +125,49 @@ private fun EmptyVideoBrowser(
 }
 
 @Composable
+private fun VideoFileFilterTabs(
+    selectedFilter: FolderFileFilter,
+    onFilterSelected: (FolderFileFilter) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FolderFileFilter.values().forEach { filter ->
+            SecondaryActionButton(
+                text = filter.label,
+                onClick = { onFilterSelected(filter) },
+                modifier = Modifier.weight(1f),
+                enabled = filter != selectedFilter
+            )
+        }
+    }
+}
+
+@Composable
 private fun VideoCandidateList(
-    videos: List<VideoCandidate>,
-    selectedVideo: VideoCandidate?,
-    onSelectVideo: (VideoCandidate) -> Unit,
+    files: List<ManagedFolderFile>,
+    selectedFile: ManagedFolderFile?,
+    onSelectFile: (ManagedFolderFile) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(videos) { video ->
-            val selected = selectedVideo?.uriString == video.uriString
+        items(files) { file ->
+            val selected = selectedFile?.uriString == file.uriString
             GlassPanel(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelectVideo(video) }
+                    .clickable { onSelectFile(file) }
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatusChip(
-                        label = if (selected) "선택됨" else "영상",
+                        label = if (selected) "선택됨" else if (ManagedFolderVideoCandidate.canPreviewImage(file)) "사진" else "영상",
                         tone = if (selected) StatusTone.Success else StatusTone.Info
                     )
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = video.displayName, fontWeight = FontWeight.Bold)
+                        Text(text = file.displayName, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "${VideoListText.fileSizeLabel(video.sizeBytes)} · ${video.folderPath}",
+                            text = VideoListText.fileSizeLabel(file.sizeBytes),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp
                         )
@@ -137,27 +180,34 @@ private fun VideoCandidateList(
 
 @Composable
 private fun SelectedVideoPanel(
-    video: VideoCandidate,
-    onPlayVideo: (VideoCandidate) -> Unit,
-    onSubmitVideo: (VideoCandidate) -> Unit
+    file: ManagedFolderFile,
+    onPlayVideo: (ManagedFolderFile) -> Unit,
+    onPreviewImage: (ManagedFolderFile) -> Unit,
+    onSubmitFile: (ManagedFolderFile) -> Unit
 ) {
+    val canPreviewImage = ManagedFolderVideoCandidate.canPreviewImage(file)
+    val canPlayVideo = ManagedFolderVideoCandidate.canUseVideoActions(file)
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Text("선택한 이벤트 미리보기", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text(text = video.displayName)
+        Text(text = file.displayName)
         Text(
-            text = "폴더: ${video.folderPath}",
+            text = VideoListText.fileSizeLabel(file.sizeBytes),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SecondaryActionButton(
-                text = "영상 재생",
-                onClick = { onPlayVideo(video) },
+                text = if (canPreviewImage) "사진 미리보기" else "영상 재생",
+                onClick = {
+                    if (canPreviewImage) onPreviewImage(file) else onPlayVideo(file)
+                },
+                enabled = canPreviewImage || canPlayVideo,
                 modifier = Modifier.weight(1f)
             )
             PrimaryActionButton(
                 text = "제출하기",
-                onClick = { onSubmitVideo(video) },
+                onClick = { onSubmitFile(file) },
+                enabled = ManagedFolderVideoCandidate.canSubmitFile(file),
                 modifier = Modifier.weight(1f)
             )
         }

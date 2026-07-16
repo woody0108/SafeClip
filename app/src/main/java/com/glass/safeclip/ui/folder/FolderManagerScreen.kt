@@ -41,14 +41,18 @@ import com.glass.safeclip.ui.video.VideoListText
 fun FolderManagerScreen(
     kind: FolderViewKind,
     files: List<ManagedFolderFile>,
+    isRefreshing: Boolean,
     message: String?,
     onBack: () -> Unit,
     onDelete: (ManagedFolderFile) -> Unit,
     onStartOperation: (ManagedFolderFile, ManagedFileOperation) -> Unit,
     onPlayVideo: (ManagedFolderFile) -> Unit,
+    onPreviewImage: (ManagedFolderFile) -> Unit,
     onSubmitVideo: (ManagedFolderFile) -> Unit
 ) {
-    var selectedFile by remember(files) { mutableStateOf(files.firstOrNull()) }
+    var selectedFilter by remember(kind) { mutableStateOf(FolderFileFilter.All) }
+    val visibleFiles = selectedFilter.apply(files)
+    var selectedFile by remember(visibleFiles) { mutableStateOf(visibleFiles.firstOrNull()) }
 
     SafeClipScaffold {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -71,11 +75,16 @@ fun FolderManagerScreen(
                         fontSize = 20.sp
                     )
                     Text(
-                        text = "파일을 선택한 뒤 삭제, 복사, 이동을 실행할 수 있습니다.",
+                        text = "파일을 선택하면 삭제, 복사, 이동을 실행할 수 있습니다.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 20.sp
                     )
-                    if (files.isEmpty()) {
+                    if (isRefreshing) {
+                        Text(
+                            text = FolderManagerText.loadingMessage(),
+                            color = SafeClipCyan
+                        )
+                    } else if (visibleFiles.isEmpty()) {
                         Text(
                             text = FolderManagerText.emptyMessage(kind),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -83,7 +92,12 @@ fun FolderManagerScreen(
                     }
                 }
 
-                files.forEach { file ->
+                FolderFilterTabs(
+                    selectedFilter = selectedFilter,
+                    onFilterSelected = { selectedFilter = it }
+                )
+
+                visibleFiles.forEach { file ->
                     ManagedFileRow(
                         file = file,
                         selected = file == selectedFile,
@@ -102,10 +116,42 @@ fun FolderManagerScreen(
                     onDelete = onDelete,
                     onStartOperation = onStartOperation,
                     onPlayVideo = onPlayVideo,
+                    onPreviewImage = onPreviewImage,
                     onSubmitVideo = onSubmitVideo,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderFilterTabs(
+    selectedFilter: FolderFileFilter,
+    onFilterSelected: (FolderFileFilter) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FolderFileFilter.values().forEach { filter ->
+            val selected = filter == selectedFilter
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onFilterSelected(filter) },
+                shape = RoundedCornerShape(8.dp),
+                color = if (selected) SafeClipCyan.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, if (selected) SafeClipCyan else SafeClipBorder)
+            ) {
+                Text(
+                    text = filter.label,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = if (selected) SafeClipCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             }
         }
@@ -118,14 +164,17 @@ private fun SelectedFileActionPanel(
     onDelete: (ManagedFolderFile) -> Unit,
     onStartOperation: (ManagedFolderFile, ManagedFileOperation) -> Unit,
     onPlayVideo: (ManagedFolderFile) -> Unit,
+    onPreviewImage: (ManagedFolderFile) -> Unit,
     onSubmitVideo: (ManagedFolderFile) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val videoActionsEnabled = ManagedFolderVideoCandidate.canUseVideoActions(file)
+    val imagePreviewEnabled = ManagedFolderVideoCandidate.canPreviewImage(file)
+    val previewEnabled = videoActionsEnabled || imagePreviewEnabled
     val submitEnabled = ManagedFolderVideoCandidate.canSubmitFile(file)
 
     GlassPanel(modifier = modifier) {
-        Text(text = "선택됨: ${file.displayName}", fontWeight = FontWeight.SemiBold)
+        Text(text = "선택됨 : ${file.displayName}", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SecondaryActionButton(text = "삭제", onClick = { onDelete(file) }, modifier = Modifier.weight(1f))
             SecondaryActionButton(
@@ -141,9 +190,15 @@ private fun SelectedFileActionPanel(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SecondaryActionButton(
-                text = "영상재생하기",
-                onClick = { onPlayVideo(file) },
-                enabled = videoActionsEnabled,
+                text = ManagedFolderVideoCandidate.primaryPreviewActionText(file),
+                onClick = {
+                    if (imagePreviewEnabled) {
+                        onPreviewImage(file)
+                    } else {
+                        onPlayVideo(file)
+                    }
+                },
+                enabled = previewEnabled,
                 modifier = Modifier.weight(1f)
             )
             PrimaryActionButton(

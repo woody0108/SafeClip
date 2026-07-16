@@ -34,7 +34,8 @@ data class LocalSubmissionRecord(
     val locationText: String,
     val incidentType: String,
     val memo: String,
-    val status: SubmissionStatus
+    val status: SubmissionStatus,
+    val submittedAtText: String = ""
 )
 
 object SubmissionDetailText {

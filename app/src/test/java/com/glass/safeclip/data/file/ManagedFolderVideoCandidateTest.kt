@@ -23,7 +23,7 @@ class ManagedFolderVideoCandidateTest {
     }
 
     @Test
-    fun captureImageCanBecomeSubmissionCandidateButCannotPlay() {
+    fun captureImageCanBecomeSubmissionCandidateAndPreviewImageButCannotPlayVideo() {
         val file = ManagedFolderFile(
             uriString = "content://safeclip/image/1",
             displayName = "front_capture.jpg",
@@ -38,6 +38,22 @@ class ManagedFolderVideoCandidateTest {
         assertEquals("front_capture.jpg", candidate.displayName)
         assertEquals("SafeClip 저장함", candidate.folderPath)
         assertEquals(false, ManagedFolderVideoCandidate.canUseVideoActions(file))
+        assertEquals(true, ManagedFolderVideoCandidate.canPreviewImage(file))
         assertEquals(true, ManagedFolderVideoCandidate.canSubmitFile(file))
+        assertEquals("사진 미리보기", ManagedFolderVideoCandidate.primaryPreviewActionText(file))
+    }
+
+    @Test
+    fun videoFileUsesVideoPreviewActionText() {
+        val file = ManagedFolderFile(
+            uriString = "content://safeclip/video/1",
+            displayName = "front_clip.mp4",
+            mimeType = "video/mp4",
+            sizeBytes = 1024L
+        )
+
+        assertEquals(true, ManagedFolderVideoCandidate.canUseVideoActions(file))
+        assertEquals(false, ManagedFolderVideoCandidate.canPreviewImage(file))
+        assertEquals("영상재생하기", ManagedFolderVideoCandidate.primaryPreviewActionText(file))
     }
 }

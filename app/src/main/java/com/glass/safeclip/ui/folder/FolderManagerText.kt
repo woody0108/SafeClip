@@ -14,4 +14,8 @@ object FolderManagerText {
             FolderViewKind.CurrentFolder -> "현재 폴더에 표시할 영상이 없습니다."
         }
     }
+
+    fun loadingMessage(): String {
+        return "파일 목록을 새로고침 중입니다."
+    }
 }

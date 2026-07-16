@@ -2,6 +2,7 @@ package com.glass.safeclip.ui.status
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,8 +14,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.glass.safeclip.ui.components.GlassPanel
@@ -30,7 +33,8 @@ import com.glass.safeclip.ui.components.StatusTone
 fun SubmissionStatusScreen(
     records: List<LocalSubmissionRecord>,
     onBackHome: () -> Unit,
-    onOpenSubmission: (LocalSubmissionRecord) -> Unit
+    onOpenSubmission: (LocalSubmissionRecord) -> Unit,
+    onOpenSubmittedFile: (LocalSubmissionRecord) -> Unit
 ) {
     var selectedRecord by remember(records) { mutableStateOf<LocalSubmissionRecord?>(null) }
 
@@ -76,7 +80,10 @@ fun SubmissionStatusScreen(
             }
 
             selectedRecord?.let { record ->
-                SubmissionDetailPanel(record = record)
+                SubmissionDetailPanel(
+                    record = record,
+                    onOpenSubmittedFile = { onOpenSubmittedFile(record) }
+                )
             }
         }
     }
@@ -100,7 +107,28 @@ private fun SubmissionRecordRow(
     onClick: () -> Unit
 ) {
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
-        Text(text = record.title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = record.title,
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (record.submittedAtText.isNotBlank()) {
+                Text(
+                    text = record.submittedAtText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
+            }
+        }
         Text(
             text = "${record.incidentDateTime} · ${record.locationText}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -120,7 +148,10 @@ private fun SubmissionRecordRow(
 }
 
 @Composable
-private fun SubmissionDetailPanel(record: LocalSubmissionRecord) {
+private fun SubmissionDetailPanel(
+    record: LocalSubmissionRecord,
+    onOpenSubmittedFile: () -> Unit
+) {
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Text("제출 상세", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         SubmissionDetailText.linesFor(record).forEach { line ->
@@ -135,7 +166,17 @@ private fun SubmissionDetailPanel(record: LocalSubmissionRecord) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp
         )
+        SecondaryActionButton(
+            text = if (isImageFile(record.video.displayName)) "사진 확인하기" else "영상 확인하기",
+            onClick = onOpenSubmittedFile,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
+}
+
+private fun isImageFile(fileName: String): Boolean {
+    val lowerName = fileName.lowercase()
+    return lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
 }
 
 private fun toneForStatus(status: SubmissionStatus): StatusTone {

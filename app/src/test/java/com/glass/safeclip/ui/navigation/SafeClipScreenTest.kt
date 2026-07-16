@@ -7,8 +7,8 @@ import org.junit.Test
 
 class SafeClipScreenTest {
     @Test
-    fun startScreenIsFirstScreen() {
-        assertEquals(SafeClipScreen.Start, SafeClipScreen.first())
+    fun bootScreenIsFirstScreen() {
+        assertEquals(SafeClipScreen.Boot, SafeClipScreen.first())
     }
 
     @Test

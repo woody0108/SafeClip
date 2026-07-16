@@ -2,10 +2,13 @@ package com.glass.safeclip.data.submission
 
 import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.ui.submission.SubmissionDraft
+import com.google.firebase.Timestamp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
+import java.util.TimeZone
 
 class SubmissionDocumentTest {
     private val video = VideoCandidate(
@@ -86,5 +89,33 @@ class SubmissionDocumentTest {
         assertEquals("event.mp4", record.video.displayName)
         assertEquals("content://safeclip/video/1", record.video.uriString)
         assertEquals("서울 강남구 테헤란로", record.locationText)
+    }
+
+    @Test
+    fun restoresSubmittedAtTextFromCreatedAtTimestamp() {
+        val previousTimeZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"))
+        try {
+            val input = SubmissionInput(
+                ownerUid = "uid-123",
+                video = video,
+                draft = draft
+            )
+            val submittedAt = Calendar.getInstance(TimeZone.getTimeZone("Asia/Seoul")).apply {
+                set(2026, Calendar.JULY, 15, 13, 5, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val fields = SubmissionDocument.createFields(input).toMutableMap()
+            fields["createdAt"] = Timestamp(submittedAt.time)
+
+            val record = SubmissionDocument.toLocalRecord(
+                documentId = "submission-123",
+                data = fields
+            )
+
+            assertEquals("2026-07-15 13:05", record.submittedAtText)
+        } finally {
+            TimeZone.setDefault(previousTimeZone)
+        }
     }
 }

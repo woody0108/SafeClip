@@ -12,6 +12,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,12 +30,12 @@ import com.glass.safeclip.data.file.LastSelectedEventFolderStore
 import com.glass.safeclip.data.file.LastSelectedFolderStore
 import com.glass.safeclip.data.file.ManagedFileOperation
 import com.glass.safeclip.data.file.ManagedFolderFile
+import com.glass.safeclip.data.file.ManagedFolderFileScanner
 import com.glass.safeclip.data.file.ManagedFolderVideoCandidate
 import com.glass.safeclip.data.file.SavedFolderAccess
 import com.glass.safeclip.data.file.VideoScanner
 import com.glass.safeclip.data.identity.GuestIdentityStore
 import com.glass.safeclip.data.media.AndroidFrameCaptureStore
-import com.glass.safeclip.data.media.AndroidSafeClipSavedMediaCounter
 import com.glass.safeclip.data.media.AndroidSafeClipSavedMediaRepository
 import com.glass.safeclip.data.media.AndroidVideoClipExporter
 import com.glass.safeclip.data.media.SafeClipEventFolder
@@ -48,14 +51,15 @@ import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.ui.folder.FolderManagerScreen
 import com.glass.safeclip.ui.folder.FolderManagerText
 import com.glass.safeclip.ui.folder.FolderViewKind
+import com.glass.safeclip.ui.folder.ImagePreviewScreen
 import com.glass.safeclip.ui.home.MainHomeScreen
 import com.glass.safeclip.ui.navigation.SafeClipBackNavigation
 import com.glass.safeclip.ui.navigation.SafeClipScreen
+import com.glass.safeclip.ui.onboarding.BootLoadingScreen
 import com.glass.safeclip.ui.onboarding.ConnectingScreen
 import com.glass.safeclip.ui.onboarding.StartScreen
 import com.glass.safeclip.ui.settings.SettingsScreen
 import com.glass.safeclip.ui.status.LocalSubmissionRecord
-import com.glass.safeclip.ui.status.SubmissionStatus
 import com.glass.safeclip.ui.status.SubmissionStatusScreen
 import com.glass.safeclip.ui.submission.SubmissionFormScreen
 import com.glass.safeclip.ui.theme.SafeClipTheme
@@ -64,8 +68,10 @@ import com.glass.safeclip.ui.video.VideoBrowserScreen
 import com.glass.safeclip.ui.video.VideoListState
 import com.glass.safeclip.ui.video.VideoPreviewScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,12 +80,12 @@ class MainActivity : ComponentActivity() {
 
         val source = AndroidDocumentTreeVideoSource(this)
         val scanner = VideoScanner()
+        val managedFileScanner = ManagedFolderFileScanner()
         val folderStore = LastSelectedFolderStore(this)
         val eventFolderStore = LastSelectedEventFolderStore(this)
         val safeClipEventFolder = SafeClipEventFolder(this, eventFolderStore)
         val frameCaptureStore = AndroidFrameCaptureStore(this, eventFolderStore)
         val clipExporter = AndroidVideoClipExporter(this, eventFolderStore)
-        val savedMediaCounter = AndroidSafeClipSavedMediaCounter(this, eventFolderStore)
         val savedMediaRepository = AndroidSafeClipSavedMediaRepository(this, eventFolderStore)
         val managedFileOperator = AndroidManagedFileOperator(this)
         val guestIdentityStore = GuestIdentityStore(this)
@@ -92,13 +98,16 @@ class MainActivity : ComponentActivity() {
             SafeClipTheme {
                 var state by remember { mutableStateOf(VideoListState()) }
                 var screen by remember { mutableStateOf<SafeClipScreen>(SafeClipScreen.first()) }
-                var selectedVideo by remember { mutableStateOf<VideoCandidate?>(null) }
                 var submissionRecords by remember { mutableStateOf<List<LocalSubmissionRecord>>(emptyList()) }
                 var authMessage by remember { mutableStateOf<String?>(null) }
                 var syncedUserProfile by remember { mutableStateOf<UserProfile?>(null) }
                 var folderManagerMessage by remember { mutableStateOf<String?>(null) }
                 var folderManagerFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
+                var currentFolderFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
+                var eventFolderFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
+                var folderManagerRefreshing by remember { mutableStateOf(false) }
                 var hasCameraPermission by remember { mutableStateOf(hasPermission(Manifest.permission.CAMERA)) }
+                var showExitConfirmDialog by remember { mutableStateOf(false) }
                 var pendingFileOperation by remember {
                     mutableStateOf<Pair<ManagedFolderFile, ManagedFileOperation>?>(null)
                 }
@@ -140,19 +149,27 @@ class MainActivity : ComponentActivity() {
 
                 fun refreshSavedMediaCountAsync() {
                     scope.launch {
-                        val count = withContext(Dispatchers.IO) {
-                            savedMediaCounter.countSavedItems()
+                        val files = withContext(Dispatchers.IO) {
+                            savedMediaRepository.listSavedItems()
                         }
-                        state = state.copy(savedMediaItemCount = count)
+                        state = state.copy(savedMediaItemCount = files.size)
+                        eventFolderFiles = files
+                        if ((screen as? SafeClipScreen.FolderManager)?.kind == FolderViewKind.SafeClipSaved) {
+                            folderManagerFiles = files
+                        }
                     }
                 }
 
-                suspend fun loadFolderState(uri: Uri, fallbackName: String = "선택한 폴더"): VideoListState {
+                suspend fun loadFolderData(
+                    uri: Uri,
+                    fallbackName: String = "선택한 폴더"
+                ): Pair<VideoListState, List<ManagedFolderFile>> {
                     val savedMediaItemCount = state.savedMediaItemCount
                     return withContext(Dispatchers.IO) {
                         val root = source.loadTree(uri)
                         val videos = root?.let { scanner.scan(it) }.orEmpty()
-                        VideoListState(
+                        val files = root?.let { managedFileScanner.scan(it) }.orEmpty()
+                        val loadedState = VideoListState(
                             selectedFolderName = root?.displayName ?: fallbackName,
                             selectedFolderUriString = uri.toString(),
                             isLoading = false,
@@ -161,10 +178,11 @@ class MainActivity : ComponentActivity() {
                             errorMessage = FolderPickerResultText.messageForVideoCount(videos.size)
                                 .takeIf { videos.isEmpty() }
                         )
+                        loadedState to files
                     }
                 }
 
-                fun currentFolderFiles(videos: List<VideoCandidate> = state.videos): List<ManagedFolderFile> {
+                fun videoFilesFromCandidates(videos: List<VideoCandidate> = state.videos): List<ManagedFolderFile> {
                     return videos.map { video ->
                         ManagedFolderFile(
                             uriString = video.uriString,
@@ -175,31 +193,92 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                suspend fun loadStartupDataBeforeHome() {
+                    refreshRuntimePermissions()
+
+                    val files = withContext(Dispatchers.IO) {
+                        if (safeClipEventFolder.loadOrCreate() == null) {
+                            null
+                        } else {
+                            savedMediaRepository.listSavedItems()
+                        }
+                    }
+                    if (files == null) {
+                        eventFolderFiles = emptyList()
+                        state = state.copy(
+                            savedMediaItemCount = 0,
+                            isLoading = false,
+                            errorMessage = "이벤트 폴더를 확인하지 못했습니다. 폴더를 다시 선택해주세요."
+                        )
+                        return
+                    }
+                    eventFolderFiles = files
+                    state = state.copy(
+                        savedMediaItemCount = files.size,
+                        isLoading = false
+                    )
+
+                    val savedUri = folderStore.load()
+                    val savedUriString = savedUri?.toString()
+                    if (SavedFolderAccess.canRestore(savedUriString, persistedReadUris(), persistedWriteUris()) && savedUri != null) {
+                        state = state.copy(isLoading = true, errorMessage = null)
+                        val (loadedState, loadedFiles) = loadFolderData(savedUri, fallbackName = "이전 선택 폴더")
+                        state = loadedState.copy(savedMediaItemCount = files.size)
+                        currentFolderFiles = loadedFiles.ifEmpty { videoFilesFromCandidates(loadedState.videos) }
+                        folderManagerFiles = currentFolderFiles
+                    } else if (!savedUriString.isNullOrBlank()) {
+                        state = state.copy(
+                            isLoading = false,
+                            errorMessage = "이전 폴더에 연결 권한이 없어 다시 선택해야 삭제/이동할 수 있습니다."
+                        )
+                    } else {
+                        state = state.copy(isLoading = false)
+                    }
+                }
+
                 fun reloadCurrentFolderIfPossibleAsync() {
                     val folderUri = state.selectedFolderUriString?.let(Uri::parse) ?: return
                     scope.launch {
                         state = state.copy(isLoading = true, errorMessage = null)
-                        val loadedState = loadFolderState(folderUri, fallbackName = state.selectedFolderName ?: "선택한 폴더")
+                        val (loadedState, loadedFiles) = loadFolderData(
+                            folderUri,
+                            fallbackName = state.selectedFolderName ?: "선택한 폴더"
+                        )
                         state = loadedState
-                        selectedVideo = loadedState.videos.firstOrNull()
-                        folderManagerFiles = currentFolderFiles(loadedState.videos)
+                        currentFolderFiles = loadedFiles.ifEmpty { videoFilesFromCandidates(loadedState.videos) }
+                        folderManagerFiles = currentFolderFiles
                     }
                 }
 
                 fun refreshFolderManagerFilesAsync(kind: FolderViewKind) {
                     scope.launch {
-                        folderManagerFiles = when (kind) {
-                            FolderViewKind.SafeClipSaved -> withContext(Dispatchers.IO) {
-                                savedMediaRepository.listSavedItems()
+                        when (kind) {
+                            FolderViewKind.SafeClipSaved -> {
+                                folderManagerRefreshing = true
+                                val refreshedFiles = withContext(Dispatchers.IO) {
+                                    savedMediaRepository.listSavedItems()
+                                }
+                                eventFolderFiles = refreshedFiles
+                                if ((screen as? SafeClipScreen.FolderManager)?.kind == FolderViewKind.SafeClipSaved) {
+                                    folderManagerFiles = refreshedFiles
+                                }
+                                folderManagerRefreshing = false
                             }
-                            FolderViewKind.CurrentFolder -> currentFolderFiles()
+                            FolderViewKind.CurrentFolder -> {
+                                folderManagerRefreshing = false
+                                folderManagerFiles = currentFolderFiles.ifEmpty { videoFilesFromCandidates() }
+                            }
                         }
                     }
                 }
 
                 fun openFolderManager(kind: FolderViewKind) {
                     folderManagerMessage = null
-                    folderManagerFiles = emptyList()
+                    folderManagerRefreshing = kind == FolderViewKind.SafeClipSaved
+                    folderManagerFiles = when (kind) {
+                        FolderViewKind.SafeClipSaved -> eventFolderFiles
+                        FolderViewKind.CurrentFolder -> currentFolderFiles.ifEmpty { videoFilesFromCandidates() }
+                    }
                     screen = SafeClipScreen.FolderManager(kind)
                     refreshFolderManagerFilesAsync(kind)
                 }
@@ -246,18 +325,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun loadCurrentUserProfileAsync() {
+                suspend fun loadCurrentUserProfile() {
                     val currentUser = firebaseAuthConnector.currentSignedInUser() ?: return
-                    scope.launch {
-                        syncSignedInUser(currentUser)
-                        when (val result = userProfileRepository.load(currentUser.uid)) {
-                            is UserProfileSyncResult.Success -> {
-                                syncedUserProfile = result.profile
-                            }
-                            is UserProfileSyncResult.Failed -> {
-                                authMessage = result.message
-                            }
+                    syncSignedInUser(currentUser)
+                    when (val result = userProfileRepository.load(currentUser.uid)) {
+                        is UserProfileSyncResult.Success -> {
+                            syncedUserProfile = result.profile
                         }
+                        is UserProfileSyncResult.Failed -> {
+                            authMessage = result.message
+                        }
+                    }
+                }
+
+                fun loadCurrentUserProfileAsync() {
+                    scope.launch {
+                        loadCurrentUserProfile()
                     }
                 }
 
@@ -267,21 +350,31 @@ class MainActivity : ComponentActivity() {
                     } ?: SubmissionLookupKey.GuestId(guestId)
                 }
 
-                fun refreshSubmissionRecordsAsync() {
-                    scope.launch {
-                        when (val result = submissionRepository.findBy(currentSubmissionLookupKey())) {
-                            is SubmissionListResult.Success -> {
-                                submissionRecords = result.records
-                                authMessage = result.message
-                            }
-                            is SubmissionListResult.Failed -> {
-                                authMessage = result.message
-                            }
+                suspend fun loadSubmissionRecords() {
+                    when (val result = submissionRepository.findBy(currentSubmissionLookupKey())) {
+                        is SubmissionListResult.Success -> {
+                            submissionRecords = result.records
+                            authMessage = result.message
+                        }
+                        is SubmissionListResult.Failed -> {
+                            authMessage = result.message
                         }
                     }
                 }
 
-                BackHandler(enabled = SafeClipBackNavigation.previousScreen(screen) != null) {
+                fun refreshSubmissionRecordsAsync() {
+                    scope.launch {
+                        loadSubmissionRecords()
+                    }
+                }
+
+                BackHandler(enabled = screen == SafeClipScreen.Start) {
+                    showExitConfirmDialog = true
+                }
+
+                BackHandler(
+                    enabled = screen != SafeClipScreen.Start && SafeClipBackNavigation.previousScreen(screen) != null
+                ) {
                     goBack()
                 }
 
@@ -313,7 +406,7 @@ class MainActivity : ComponentActivity() {
                         withContext(Dispatchers.IO) {
                             safeClipEventFolder.ensureIn(uri)
                         }
-                        refreshSavedMediaCountAsync()
+                        loadStartupDataBeforeHome()
                         screen = SafeClipScreen.Home
                     }
                 }
@@ -337,33 +430,44 @@ class MainActivity : ComponentActivity() {
                     screen = SafeClipScreen.VideoBrowser
                     scope.launch {
                         state = state.copy(isLoading = true, errorMessage = null)
-                        val loadedState = loadFolderState(uri)
+                        val (loadedState, loadedFiles) = loadFolderData(uri)
                         state = loadedState
-                        selectedVideo = loadedState.videos.firstOrNull()
+                        currentFolderFiles = loadedFiles.ifEmpty { videoFilesFromCandidates(loadedState.videos) }
                     }
                 }
 
                 LaunchedEffect(Unit) {
-                    refreshRuntimePermissions()
-                    loadCurrentUserProfileAsync()
-                    refreshSubmissionRecordsAsync()
-                    val savedMediaCount = withContext(Dispatchers.IO) {
-                        safeClipEventFolder.loadOrCreate()
-                        savedMediaCounter.countSavedItems()
-                    }
-                    state = state.copy(savedMediaItemCount = savedMediaCount)
-                    val savedUri = folderStore.load()
-                    val savedUriString = savedUri?.toString()
+                    val bootStartedAt = System.currentTimeMillis()
+                    withTimeoutOrNull(BOOT_MAX_DURATION_MS) {
+                        refreshRuntimePermissions()
+                        loadCurrentUserProfile()
+                        loadSubmissionRecords()
+                        val savedMediaFiles = withContext(Dispatchers.IO) {
+                            safeClipEventFolder.loadOrCreate()
+                            savedMediaRepository.listSavedItems()
+                        }
+                        state = state.copy(savedMediaItemCount = savedMediaFiles.size)
+                        eventFolderFiles = savedMediaFiles
+                        val savedUri = folderStore.load()
+                        val savedUriString = savedUri?.toString()
 
-                    if (SavedFolderAccess.canRestore(savedUriString, persistedReadUris(), persistedWriteUris()) && savedUri != null) {
-                        state = state.copy(isLoading = true, errorMessage = null)
-                        val loadedState = loadFolderState(savedUri, fallbackName = "이전 선택 폴더")
-                        state = loadedState
-                        selectedVideo = loadedState.videos.firstOrNull()
-                    } else if (!savedUriString.isNullOrBlank()) {
-                        state = state.copy(
-                            errorMessage = "이전 폴더는 쓰기 권한이 없어 다시 선택해야 삭제/이동할 수 있습니다."
-                        )
+                        if (SavedFolderAccess.canRestore(savedUriString, persistedReadUris(), persistedWriteUris()) && savedUri != null) {
+                            state = state.copy(isLoading = true, errorMessage = null)
+                            val (loadedState, loadedFiles) = loadFolderData(savedUri, fallbackName = "이전 선택 폴더")
+                            state = loadedState
+                            currentFolderFiles = loadedFiles.ifEmpty { videoFilesFromCandidates(loadedState.videos) }
+                        } else if (!savedUriString.isNullOrBlank()) {
+                            state = state.copy(
+                                errorMessage = "이전 폴더는 쓰기 권한이 없어 다시 선택해야 삭제/이동할 수 있습니다."
+                            )
+                        }
+                    }
+                    val elapsed = System.currentTimeMillis() - bootStartedAt
+                    if (elapsed < BOOT_MIN_VISIBLE_MS) {
+                        delay(BOOT_MIN_VISIBLE_MS - elapsed)
+                    }
+                    if (screen == SafeClipScreen.Boot) {
+                        screen = SafeClipScreen.Start
                     }
                 }
 
@@ -405,7 +509,31 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                if (showExitConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showExitConfirmDialog = false },
+                        title = { Text("앱을 종료하시겠습니까?") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showExitConfirmDialog = false
+                                    finish()
+                                }
+                            ) {
+                                Text("예")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showExitConfirmDialog = false }) {
+                                Text("아니오")
+                            }
+                        }
+                    )
+                }
+
                 when (val currentScreen = screen) {
+                    SafeClipScreen.Boot -> BootLoadingScreen()
+
                     SafeClipScreen.Start -> StartScreen(
                         guestId = guestId,
                         linkedDisplayName = syncedUserProfile?.displayName,
@@ -430,11 +558,7 @@ class MainActivity : ComponentActivity() {
                                 eventFolderPicker.launch(null)
                             } else {
                                 scope.launch {
-                                    val savedMediaCount = withContext(Dispatchers.IO) {
-                                        safeClipEventFolder.loadOrCreate()
-                                        savedMediaCounter.countSavedItems()
-                                    }
-                                    state = state.copy(savedMediaItemCount = savedMediaCount)
+                                    loadStartupDataBeforeHome()
                                     screen = SafeClipScreen.Home
                                 }
                             }
@@ -445,6 +569,8 @@ class MainActivity : ComponentActivity() {
 
                     SafeClipScreen.Home -> MainHomeScreen(
                         state = state,
+                        eventFolderFiles = eventFolderFiles,
+                        currentFolderFiles = currentFolderFiles.ifEmpty { videoFilesFromCandidates() },
                         folderPermissionGranted = hasFolderPermission(),
                         cameraPermissionGranted = hasCameraPermission,
                         submissionCount = submissionRecords.size,
@@ -519,6 +645,7 @@ class MainActivity : ComponentActivity() {
                     is SafeClipScreen.FolderManager -> FolderManagerScreen(
                         kind = currentScreen.kind,
                         files = folderManagerFiles,
+                        isRefreshing = folderManagerRefreshing,
                         message = folderManagerMessage,
                         onBack = ::goBack,
                         onDelete = { file ->
@@ -546,11 +673,13 @@ class MainActivity : ComponentActivity() {
                                 folderPath = FolderManagerText.title(currentScreen.kind)
                             )
                             if (video != null) {
-                                selectedVideo = video
                                 screen = SafeClipScreen.VideoPreview(video)
                             } else {
                                 folderManagerMessage = "영상 파일만 재생할 수 있습니다."
                             }
+                        },
+                        onPreviewImage = { file ->
+                            screen = SafeClipScreen.ImagePreview(file, currentScreen.kind)
                         },
                         onSubmitVideo = { file ->
                             val video = ManagedFolderVideoCandidate.fromSubmittableFile(
@@ -558,7 +687,6 @@ class MainActivity : ComponentActivity() {
                                 folderPath = FolderManagerText.title(currentScreen.kind)
                             )
                             if (video != null) {
-                                selectedVideo = video
                                 screen = SafeClipScreen.SubmissionForm(video, null)
                             } else {
                                 folderManagerMessage = "영상 또는 JPG 파일만 제출할 수 있습니다."
@@ -568,10 +696,28 @@ class MainActivity : ComponentActivity() {
 
                     SafeClipScreen.VideoBrowser -> VideoBrowserScreen(
                         state = state,
-                        selectedVideo = selectedVideo ?: state.videos.firstOrNull(),
-                        onSelectVideo = { selectedVideo = it },
-                        onPlayVideo = { screen = SafeClipScreen.VideoPreview(it) },
-                        onSubmitVideo = { screen = SafeClipScreen.SubmissionForm(it, null) },
+                        files = currentFolderFiles.ifEmpty { videoFilesFromCandidates() },
+                        onPlayVideo = { file ->
+                            val video = ManagedFolderVideoCandidate.from(
+                                file = file,
+                                folderPath = state.selectedFolderName ?: "현재 폴더"
+                            )
+                            if (video != null) {
+                                screen = SafeClipScreen.VideoPreview(video)
+                            }
+                        },
+                        onPreviewImage = { file ->
+                            screen = SafeClipScreen.ImagePreview(file, FolderViewKind.CurrentFolder)
+                        },
+                        onSubmitFile = { file ->
+                            val video = ManagedFolderVideoCandidate.fromSubmittableFile(
+                                file = file,
+                                folderPath = state.selectedFolderName ?: "현재 폴더"
+                            )
+                            if (video != null) {
+                                screen = SafeClipScreen.SubmissionForm(video, null)
+                            }
+                        },
                         onBackHome = ::goBack
                     )
 
@@ -597,6 +743,11 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
+                    is SafeClipScreen.ImagePreview -> ImagePreviewScreen(
+                        file = currentScreen.file,
+                        onBack = ::goBack
+                    )
+
                     is SafeClipScreen.SubmissionForm -> SubmissionFormScreen(
                         video = currentScreen.video,
                         clip = currentScreen.clip,
@@ -619,18 +770,8 @@ class MainActivity : ComponentActivity() {
                                             result.message,
                                             Toast.LENGTH_SHORT
                                         ).show()
-                            val record = LocalSubmissionRecord(
-                                id = result.documentId,
-                                video = currentScreen.video,
-                                title = draft.incidentType.ifBlank { "블랙박스 영상 제출" },
-                                incidentDateTime = draft.incidentDateTime,
-                                locationText = draft.locationText,
-                                incidentType = draft.incidentType,
-                                memo = draft.memo,
-                                status = SubmissionStatus.WaitingReview
-                            )
-                            refreshSubmissionRecordsAsync()
-                            screen = SafeClipScreen.SubmissionStatus
+                                        refreshSubmissionRecordsAsync()
+                                        screen = SafeClipScreen.SubmissionStatus
                                     }
 
                                     is SubmissionSaveResult.Failed -> {
@@ -648,7 +789,27 @@ class MainActivity : ComponentActivity() {
                     SafeClipScreen.SubmissionStatus -> SubmissionStatusScreen(
                         records = submissionRecords,
                         onBackHome = ::goBack,
-                        onOpenSubmission = { }
+                        onOpenSubmission = { },
+                        onOpenSubmittedFile = { record ->
+                            val file = ManagedFolderFile(
+                                uriString = record.video.uriString,
+                                displayName = record.video.displayName,
+                                mimeType = mimeTypeForDisplayName(record.video.displayName),
+                                sizeBytes = record.video.sizeBytes
+                            )
+                            if (ManagedFolderVideoCandidate.canPreviewImage(file)) {
+                                screen = SafeClipScreen.ImagePreview(
+                                    file = file,
+                                    sourceKind = FolderViewKind.CurrentFolder,
+                                    returnScreen = SafeClipScreen.SubmissionStatus
+                                )
+                            } else {
+                                screen = SafeClipScreen.VideoPreview(
+                                    video = record.video,
+                                    returnScreen = SafeClipScreen.SubmissionStatus
+                                )
+                            }
+                        }
                     )
                 }
             }
@@ -657,5 +818,18 @@ class MainActivity : ComponentActivity() {
 
     private fun hasPermission(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun mimeTypeForDisplayName(displayName: String): String {
+        val lowerName = displayName.lowercase()
+        return when {
+            lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") -> "image/jpeg"
+            else -> "video/mp4"
+        }
+    }
+
+    companion object {
+        private const val BOOT_MIN_VISIBLE_MS = 650L
+        private const val BOOT_MAX_DURATION_MS = 1_500L
     }
 }

@@ -3,7 +3,11 @@ package com.glass.safeclip.data.submission
 import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.ui.status.LocalSubmissionRecord
 import com.glass.safeclip.ui.status.SubmissionStatus
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 object SubmissionDocument {
     fun createFields(input: SubmissionInput): Map<String, Any?> {
@@ -46,8 +50,20 @@ object SubmissionDocument {
             locationText = data["incidentLocationText"] as? String ?: "",
             incidentType = incidentType,
             memo = data["userMemo"] as? String ?: "",
-            status = statusFromFirestore(data["status"] as? String)
+            status = statusFromFirestore(data["status"] as? String),
+            submittedAtText = formatSubmittedAt(data["createdAt"])
         )
+    }
+
+    private fun formatSubmittedAt(value: Any?): String {
+        val date = when (value) {
+            is Timestamp -> value.toDate()
+            is Date -> value
+            is Long -> Date(value)
+            else -> null
+        } ?: return ""
+
+        return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA).format(date)
     }
 
     private fun statusFromFirestore(status: String?): SubmissionStatus {

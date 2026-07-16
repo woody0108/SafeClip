@@ -4,9 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glass.safeclip.data.file.ManagedFolderFile
+import com.glass.safeclip.data.file.ManagedFolderVideoCandidate
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
@@ -32,6 +38,8 @@ import com.glass.safeclip.ui.video.VideoListState
 @Composable
 fun MainHomeScreen(
     state: VideoListState,
+    eventFolderFiles: List<ManagedFolderFile>,
+    currentFolderFiles: List<ManagedFolderFile>,
     folderPermissionGranted: Boolean,
     cameraPermissionGranted: Boolean,
     submissionCount: Int,
@@ -49,8 +57,10 @@ fun MainHomeScreen(
         cameraPermissionGranted = cameraPermissionGranted
     )
     val statusSummary = HomeStatusSummary.from(
-        savedMediaItemCount = state.savedMediaItemCount,
-        currentFolderVideoCount = state.videos.size,
+        savedEventVideoCount = eventFolderFiles.count { ManagedFolderVideoCandidate.canUseVideoActions(it) },
+        savedEventPhotoCount = eventFolderFiles.count { ManagedFolderVideoCandidate.canPreviewImage(it) },
+        currentFolderVideoCount = currentFolderFiles.count { ManagedFolderVideoCandidate.canUseVideoActions(it) },
+        currentFolderPhotoCount = currentFolderFiles.count { ManagedFolderVideoCandidate.canPreviewImage(it) },
         submissionCount = submissionCount
     )
 
@@ -96,20 +106,27 @@ fun MainHomeScreen(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 FolderStatusTile(
                     label = "이벤트 폴더",
                     value = statusSummary.savedEventCountText,
                     enabled = importActions.eventFolderEnabled,
                     onOpenFolder = { onOpenFolder(FolderViewKind.SafeClipSaved) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
                 )
                 FolderStatusTile(
                     label = "현재 폴더",
                     value = statusSummary.currentFolderCountText,
                     enabled = folderPermissionGranted,
                     onOpenFolder = { onOpenFolder(FolderViewKind.CurrentFolder) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
                 )
             }
 
@@ -185,16 +202,20 @@ private fun FolderStatusTile(
     modifier: Modifier = Modifier
 ) {
     GlassPanel(modifier = modifier) {
-        Text(
-            text = label,
-            fontWeight = FontWeight.Bold,
-            fontSize = HomeTileTextStyle.TITLE_FONT_SIZE_SP.sp
-        )
-        Text(
-            text = value,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP.sp
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                fontWeight = FontWeight.Bold,
+                fontSize = HomeTileTextStyle.TITLE_FONT_SIZE_SP.sp
+            )
+            Text(
+                text = value,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP.sp,
+                lineHeight = (HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP + 5).sp
+            )
+        }
+        Spacer(modifier = Modifier.weight(0.01f))
         SecondaryActionButton(text = "폴더 보기", onClick = onOpenFolder, enabled = enabled)
     }
 }

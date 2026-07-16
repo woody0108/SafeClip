@@ -1,5 +1,10 @@
 package com.glass.safeclip.ui.onboarding
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +55,57 @@ import com.glass.safeclip.ui.theme.SafeClipOrange
 import com.glass.safeclip.ui.theme.SafeClipSuccess
 import com.glass.safeclip.ui.theme.SafeClipSurface
 import com.glass.safeclip.ui.theme.SafeClipTextSecondary
+
+@Composable
+fun BootLoadingScreen() {
+    SafeClipScaffold {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            SafeClipLogoIcon(modifier = Modifier.size(86.dp))
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+                text = "SafeClip",
+                color = Color.White,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(22.dp))
+            SmoothLoadingDots()
+        }
+    }
+}
+
+@Composable
+private fun SmoothLoadingDots() {
+    val transition = rememberInfiniteTransition(label = "boot-loading-dots")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "boot-loading-phase"
+    )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(3) { index ->
+            val distance = kotlin.math.abs(phase - index)
+            val alpha = (1f - distance.coerceIn(0f, 1f) * 0.55f).coerceIn(0.45f, 1f)
+            Text(
+                text = ".",
+                color = SafeClipCyan.copy(alpha = alpha),
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
 
 @Composable
 fun StartScreen(
