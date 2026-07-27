@@ -5,9 +5,10 @@ Keep it factual and update it when folders or ownership boundaries change.
 
 ## Project Type
 
-- Android application project plus a separate admin web project.
+- Android application project plus separate admin web and NAS upload API projects.
 - Android stack: Kotlin, Jetpack Compose, Gradle Kotlin DSL.
 - Admin web stack: React, Vite, TypeScript, Firebase web SDK.
+- NAS upload API stack: PHP 8.0 on Synology Web Station.
 - First product target: Android submission MVP for blackbox dashcam video import and company review.
 
 ## Top-Level Structure
@@ -16,6 +17,7 @@ Keep it factual and update it when folders or ownership boundaries change.
 SafeClip/
   app/          Android app module opened by Android Studio
   admin-web/    company admin web project
+  nas-upload-api/ PHP upload receiver for Synology NAS Web Station
   gradle/       Gradle wrapper and version catalog for Android
   docs/         product specs, design docs, references, and execution plans
   AGENTS.md     Codex working guide
@@ -56,6 +58,22 @@ Initial scope:
 - Later photo/video viewing through Firebase Storage or a company upload server.
 
 The admin web is not an Android Studio project. It is a separate web project kept beside the Android `app/` module so the two surfaces do not get mixed together.
+
+## nas-upload-api
+
+`nas-upload-api/` contains the internal company NAS upload receiver.
+
+Initial scope:
+
+- PHP 8.0 upload endpoint for Synology Web Station.
+- Single video upload API with an upload key.
+- Uploaded files stored in a NAS share outside the public web folder.
+- No read, list, download, or delete API in the first MVP.
+
+Planned boundary:
+
+- Android upload integration can call this API later.
+- Company admins retrieve uploaded files from the NAS shared folder, not from a public web URL.
 
 ## docs
 

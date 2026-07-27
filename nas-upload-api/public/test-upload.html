@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SafeClip Upload Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 720px;
+      margin: 32px auto;
+      padding: 0 16px;
+      line-height: 1.5;
+    }
+    label {
+      display: block;
+      margin-top: 16px;
+      font-weight: 600;
+    }
+    input,
+    textarea,
+    button {
+      box-sizing: border-box;
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      padding: 10px;
+      font: inherit;
+    }
+    button {
+      margin-top: 20px;
+      cursor: pointer;
+    }
+    pre {
+      min-height: 80px;
+      padding: 12px;
+      overflow: auto;
+      background: #f4f6f8;
+      border: 1px solid #d8dde3;
+    }
+  </style>
+</head>
+<body>
+  <h1>SafeClip Upload Test</h1>
+  <form id="upload-form">
+    <label>
+      Upload key
+      <input name="upload_key" type="password" required>
+    </label>
+    <label>
+      Video
+      <input name="video" type="file" accept=".mp4,.mov,.avi,.ts,video/*" required>
+    </label>
+    <label>
+      Submission ID
+      <input name="submission_id" value="browser-test-001">
+    </label>
+    <label>
+      Device label
+      <input name="device_label" value="office-browser">
+    </label>
+    <label>
+      Memo
+      <textarea name="memo" rows="3"></textarea>
+    </label>
+    <button type="submit">Upload</button>
+  </form>
+  <h2>Response</h2>
+  <pre id="result"></pre>
+
+  <script>
+    const form = document.querySelector('#upload-form');
+    const result = document.querySelector('#result');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      result.textContent = 'Uploading...';
+
+      const response = await fetch('upload.php', {
+        method: 'POST',
+        body: new FormData(form),
+      });
+
+      result.textContent = await response.text();
+    });
+  </script>
+</body>
+</html>
