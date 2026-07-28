@@ -16,7 +16,8 @@ Keep it factual and update it when folders or ownership boundaries change.
 ```text
 SafeClip/
   app/          Android app module opened by Android Studio
-  admin-web/    company admin web project
+  admin-web/    earlier React/Vite admin web placeholder
+  company-web-server/ PHP company review web deployed to Synology Web Station
   nas-upload-api/ PHP upload receiver for Synology NAS Web Station
   gradle/       Gradle wrapper and version catalog for Android
   docs/         product specs, design docs, references, and execution plans
@@ -58,6 +59,19 @@ Initial scope:
 - Later photo/video viewing through Firebase Storage or a company upload server.
 
 The admin web is not an Android Studio project. It is a separate web project kept beside the Android `app/` module so the two surfaces do not get mixed together.
+
+## company-web-server
+
+`company-web-server/` contains the current Synology Web Station company review web.
+
+Current scope:
+
+- Read Firestore `submissions` through NAS PHP.
+- Show submission list and detail.
+- Stream matching NAS video files from `/volume1/Videos` or configured storage.
+- Update Firestore `status` to `completed` from the review button.
+
+Do not mix this folder with Android app work. Server-web work should stay here unless the user explicitly asks to change the mobile app.
 
 ## nas-upload-api
 

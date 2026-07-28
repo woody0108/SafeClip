@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SafeClip 회사 검토</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">SC</div>
+        <div>
+          <strong>SafeClip</strong>
+          <span>회사 검토 서버</span>
+        </div>
+      </div>
+      <nav aria-label="주요 메뉴">
+        <span class="nav-item active" aria-current="page">영상 검토</span>
+      </nav>
+      <p class="network-note">내부망 전용으로 운영하세요.</p>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Dashboard</p>
+          <h1>제출 영상 검토</h1>
+        </div>
+        <button id="refresh-button" class="ghost-button" type="button">새로고침</button>
+      </header>
+
+      <section class="metrics" aria-label="제출 요약">
+        <article>
+          <span>전체 제출</span>
+          <strong id="metric-total">0</strong>
+        </article>
+        <article>
+          <span>검토 대기</span>
+          <strong id="metric-waiting">0</strong>
+        </article>
+        <article>
+          <span>검토 완료</span>
+          <strong id="metric-completed">0</strong>
+        </article>
+      </section>
+
+      <section class="review-layout">
+        <section class="panel video-panel" aria-label="영상 보기">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Video</p>
+              <h2 id="selected-title">제출을 선택하세요</h2>
+            </div>
+            <span id="selected-status" class="status-chip">대기</span>
+          </div>
+
+          <div class="video-frame">
+            <video id="review-video" controls preload="metadata"></video>
+            <div id="video-placeholder" class="video-placeholder">제출 목록에서 영상을 선택하세요.</div>
+          </div>
+
+          <dl class="detail-grid">
+            <div>
+              <dt>제출 ID</dt>
+              <dd id="detail-id">-</dd>
+            </div>
+            <div>
+              <dt>제출자</dt>
+              <dd id="detail-user">-</dd>
+            </div>
+            <div>
+              <dt>제출 시간</dt>
+              <dd id="detail-created">-</dd>
+            </div>
+            <div>
+              <dt>사건 일시</dt>
+              <dd id="detail-incident-time">-</dd>
+            </div>
+            <div>
+              <dt>사건 위치</dt>
+              <dd id="detail-location">-</dd>
+            </div>
+            <div>
+              <dt>사건 유형</dt>
+              <dd id="detail-type">-</dd>
+            </div>
+            <div>
+              <dt>파일명</dt>
+              <dd id="detail-file">-</dd>
+            </div>
+            <div>
+              <dt>파일 크기</dt>
+              <dd id="detail-size">-</dd>
+            </div>
+            <div class="wide">
+              <dt>신고 내용</dt>
+              <dd id="detail-memo">-</dd>
+            </div>
+          </dl>
+
+          <button id="complete-button" class="primary-button" type="button" disabled>검토완료</button>
+          <p id="action-message" class="message"></p>
+        </section>
+
+        <section class="panel list-panel" aria-label="최근 제출 목록">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Submissions</p>
+              <h2>최근 제출 목록</h2>
+            </div>
+          </div>
+          <div id="submission-list" class="submission-list"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
