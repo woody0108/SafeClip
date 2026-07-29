@@ -94,12 +94,24 @@ function sample_submissions_from_folder(array $config, int $limit): array
     }
 
     $files = [];
-    foreach (scandir($dir) ?: [] as $name) {
-        $path = $dir . DIRECTORY_SEPARATOR . $name;
-        if ($name === '.' || $name === '..' || !is_file($path) || !allowed_video_extension($path)) {
-            continue;
+    try {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($iterator as $file) {
+            if (!$file->isFile() || !allowed_review_extension($file->getPathname())) {
+                continue;
+            }
+            $relativePath = ltrim(str_replace('\\', '/', substr($file->getPathname(), strlen($dir))), '/');
+            $files[] = [
+                'name' => $file->getFilename(),
+                'path' => $relativePath,
+                'mtime' => $file->getMTime() ?: 0,
+            ];
         }
-        $files[] = ['name' => $name, 'mtime' => filemtime($path) ?: 0];
+    } catch (UnexpectedValueException) {
+        return [];
     }
 
     usort($files, fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
@@ -107,7 +119,7 @@ function sample_submissions_from_folder(array $config, int $limit): array
 
     return array_map(static function (array $file): array {
         return [
-            'id' => 'sample-' . rawurlencode($file['name']),
+            'id' => 'sample-' . rawurlencode($file['path']),
             'status' => 'waiting_review',
             'ownerUid' => '',
             'guestId' => 'NAS-SAMPLE',
@@ -115,11 +127,11 @@ function sample_submissions_from_folder(array $config, int $limit): array
             'ownerEmail' => '',
             'submitterLabel' => 'NAS 샘플 폴더',
             'originalFileName' => $file['name'],
-            'incidentLocationText' => '\\\\SyDisk\\Videos',
+            'incidentLocationText' => '\\\\SyDisk\\SafeClipUpLoads',
             'violationTypeCandidate' => '샘플 영상',
             'userMemo' => 'NAS Videos 폴더에서 읽은 영상입니다.',
             'createdAtText' => date('Y-m-d H:i', $file['mtime']),
-            'videoPath' => $file['name'],
+            'videoPath' => $file['path'],
             'videoExists' => true,
             'sample' => true,
         ];

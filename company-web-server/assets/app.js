@@ -5,6 +5,7 @@ const state = {
 
 const listEl = document.querySelector('#submission-list');
 const videoEl = document.querySelector('#review-video');
+const imageEl = document.querySelector('#review-image');
 const refreshButton = document.querySelector('#refresh-button');
 const completeButton = document.querySelector('#complete-button');
 const actionMessage = document.querySelector('#action-message');
@@ -111,15 +112,24 @@ function renderSelected() {
   statusEl.textContent = labels[status] || status;
 
   if (hasSelected && selected.videoPath) {
-    videoEl.src = `api/video.php?id=${encodeURIComponent(selected.id)}`;
+    const mediaUrl = `api/video.php?id=${encodeURIComponent(selected.id)}`;
+    if (isImagePath(selected.videoPath)) {
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      imageEl.src = mediaUrl;
+    } else {
+      imageEl.removeAttribute('src');
+      videoEl.src = mediaUrl;
+    }
     videoPlaceholder.classList.add('hidden');
   } else {
     videoEl.removeAttribute('src');
     videoEl.load();
+    imageEl.removeAttribute('src');
     videoPlaceholder.classList.remove('hidden');
     videoPlaceholder.textContent = hasSelected
-      ? 'Videos 폴더에서 같은 파일명을 찾지 못했습니다.'
-      : '제출 목록에서 영상을 선택하세요.';
+      ? 'SafeClipUpLoads 폴더에서 같은 파일을 찾지 못했습니다.'
+      : '제출 목록에서 파일을 선택하세요.';
   }
 
   completeButton.disabled = !hasSelected || status === 'completed' || Boolean(selected?.sample);
@@ -212,6 +222,10 @@ function fileSizeLabel(bytes) {
     return `${(value / 1024).toFixed(1)} KB`;
   }
   return `${value} B`;
+}
+
+function isImagePath(path) {
+  return /\.(jpg|jpeg)$/i.test(String(path || ''));
 }
 
 function escapeHtml(value) {

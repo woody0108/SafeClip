@@ -58,6 +58,11 @@ fun MainHomeScreen(
     )
     val eventFolderSummary = ManagedFolderFileSummary.from(eventFolderFiles)
     val currentFolderSummary = ManagedFolderFileSummary.from(currentFolderFiles)
+    val folderTileActions = HomeFolderTileActions.from(
+        folderPermissionGranted = folderPermissionGranted,
+        safeClipVideoCount = eventFolderSummary.videoCount,
+        safeClipPhotoCount = eventFolderSummary.photoCount
+    )
     val statusSummary = HomeStatusSummary.from(
         savedEventVideoCount = eventFolderSummary.videoCount,
         savedEventPhotoCount = eventFolderSummary.photoCount,
@@ -89,7 +94,7 @@ fun MainHomeScreen(
                 )
                 Text(
                     text = importActions.selectedFolderText
-                        ?: "USB-C 리더기 또는 microSD 카드의 이벤트 영상 폴더를 선택하면 최근 영상을 확인할 수 있습니다.",
+                        ?: "USB-C 리더기 또는 microSD 카드의 블랙박스 폴더를 선택하면 영상과 사진을 확인할 수 있습니다.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 22.sp
                 )
@@ -99,13 +104,15 @@ fun MainHomeScreen(
                     onClick = onLoadVideos,
                     modifier = Modifier.fillMaxWidth()
                 )
-                HomeActionButton(
-                    text = importActions.recentButtonText,
-                    isPrimary = importActions.recentButtonIsPrimary,
-                    onClick = onOpenRecentEvents,
-                    enabled = importActions.recentButtonEnabled,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (importActions.showRecentButton) {
+                    HomeActionButton(
+                        text = importActions.recentButtonText,
+                        isPrimary = importActions.recentButtonIsPrimary,
+                        onClick = onOpenRecentEvents,
+                        enabled = importActions.recentButtonEnabled,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             Row(
@@ -113,18 +120,20 @@ fun MainHomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 FolderStatusTile(
-                    label = "이벤트 폴더",
+                    label = "SafeClip 폴더",
                     value = statusSummary.savedEventCountText,
                     enabled = importActions.eventFolderEnabled,
+                    isPrimary = folderTileActions.safeClipFolderViewIsPrimary,
                     onOpenFolder = { onOpenFolder(FolderViewKind.SafeClipSaved) },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                 )
                 FolderStatusTile(
-                    label = "현재 폴더",
+                    label = "블랙박스 폴더",
                     value = statusSummary.currentFolderCountText,
                     enabled = folderPermissionGranted,
+                    isPrimary = folderTileActions.blackboxFolderViewIsPrimary,
                     onOpenFolder = { onOpenFolder(FolderViewKind.CurrentFolder) },
                     modifier = Modifier
                         .weight(1f)
@@ -200,6 +209,7 @@ private fun FolderStatusTile(
     label: String,
     value: String,
     enabled: Boolean,
+    isPrimary: Boolean,
     onOpenFolder: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -218,7 +228,12 @@ private fun FolderStatusTile(
             )
         }
         Spacer(modifier = Modifier.weight(0.01f))
-        SecondaryActionButton(text = "폴더 보기", onClick = onOpenFolder, enabled = enabled)
+        HomeActionButton(
+            text = "폴더 보기",
+            isPrimary = isPrimary,
+            onClick = onOpenFolder,
+            enabled = enabled
+        )
     }
 }
 

@@ -30,6 +30,7 @@ import com.glass.safeclip.app.FolderPermissionSnapshot
 import com.glass.safeclip.app.SavedFolderRestorePlan
 import com.glass.safeclip.app.SavedFolderRestorePlanner
 import com.glass.safeclip.app.SubmittedFilePreviewRoute
+import com.glass.safeclip.app.SubmissionAttachmentSourceFiles
 import com.glass.safeclip.app.SubmissionLookupSelector
 import com.glass.safeclip.data.auth.FirebaseAuthConnector
 import com.glass.safeclip.data.file.AndroidDocumentTreeVideoSource
@@ -51,6 +52,9 @@ import com.glass.safeclip.data.profile.FirestoreUserProfileRepository
 import com.glass.safeclip.data.profile.UserProfile
 import com.glass.safeclip.data.profile.UserProfileSyncResult
 import com.glass.safeclip.data.submission.FirestoreSubmissionRepository
+import com.glass.safeclip.data.submission.AndroidSubmissionMetadataReader
+import com.glass.safeclip.data.submission.NasSubmissionUploadClient
+import com.glass.safeclip.data.submission.SubmissionAttachment
 import com.glass.safeclip.data.submission.SubmissionInput
 import com.glass.safeclip.data.submission.SubmissionListResult
 import com.glass.safeclip.data.submission.SubmissionOwnerLinkResult
@@ -71,6 +75,7 @@ import com.glass.safeclip.ui.status.SubmissionStatusScreen
 import com.glass.safeclip.ui.submission.SubmissionFormScreen
 import com.glass.safeclip.ui.theme.SafeClipTheme
 import com.glass.safeclip.ui.video.VideoBrowserScreen
+import com.glass.safeclip.ui.video.VideoBrowserSource
 import com.glass.safeclip.ui.video.VideoListState
 import com.glass.safeclip.ui.video.VideoPreviewScreen
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +105,12 @@ class MainActivity : ComponentActivity() {
         val firebaseAuthConnector = FirebaseAuthConnector(this)
         val userProfileRepository = FirestoreUserProfileRepository()
         val submissionRepository = FirestoreSubmissionRepository()
+        val submissionMetadataReader = AndroidSubmissionMetadataReader(this)
+        val nasUploadClient = NasSubmissionUploadClient(
+            context = this,
+            uploadUrl = BuildConfig.SAFECLIP_NAS_UPLOAD_URL,
+            uploadKey = BuildConfig.SAFECLIP_NAS_UPLOAD_KEY
+        )
 
         setContent {
             SafeClipTheme {
@@ -197,6 +208,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                fun submissionAttachmentSourceFiles(): SubmissionAttachmentSourceFiles {
+                    return SubmissionAttachmentSourceFiles.from(
+                        currentFolderFiles = currentFolderFiles,
+                        eventFolderFiles = eventFolderFiles,
+                        fallbackVideos = state.videos
+                    )
+                }
+
                 fun folderManagerFilesFor(kind: FolderViewKind): List<ManagedFolderFile> {
                     return FolderManagerFileSelector.select(
                         kind = kind,
@@ -221,7 +240,7 @@ class MainActivity : ComponentActivity() {
                         state = state.copy(
                             savedMediaItemCount = 0,
                             isLoading = false,
-                            errorMessage = "이벤트 폴더를 확인하지 못했습니다. 폴더를 다시 선택해주세요."
+                            errorMessage = "SafeClip 폴더를 확인하지 못했습니다. 폴더를 다시 선택해주세요."
                         )
                         return
                     }
@@ -292,6 +311,19 @@ class MainActivity : ComponentActivity() {
                     folderManagerFiles = folderManagerFilesFor(kind)
                     screen = SafeClipScreen.FolderManager(kind)
                     refreshFolderManagerFilesAsync(kind)
+                }
+
+                fun isSafeClipBrowserFile(file: ManagedFolderFile, source: VideoBrowserSource): Boolean {
+                    return source == VideoBrowserSource.SafeClip ||
+                        (source == VideoBrowserSource.All && eventFolderFiles.any { it.uriString == file.uriString })
+                }
+
+                fun browserFolderPath(file: ManagedFolderFile, source: VideoBrowserSource): String {
+                    return if (isSafeClipBrowserFile(file, source)) {
+                        "SafeClip 폴더"
+                    } else {
+                        state.selectedFolderName ?: "블랙박스 폴더"
+                    }
                 }
 
                 fun goBack() {
@@ -400,7 +432,7 @@ class MainActivity : ComponentActivity() {
                     contract = ActivityResultContracts.OpenDocumentTree()
                 ) { uri: Uri? ->
                     if (uri == null) {
-                        state = state.copy(errorMessage = "이벤트 폴더 연결이 취소되었습니다.")
+                        state = state.copy(errorMessage = "SafeClip 폴더 연결이 취소되었습니다.")
                         screen = SafeClipScreen.Home
                         return@rememberLauncherForActivityResult
                     }
@@ -438,7 +470,7 @@ class MainActivity : ComponentActivity() {
                     }
                     folderStore.save(uri)
 
-                    screen = SafeClipScreen.VideoBrowser
+                    screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.Blackbox)
                     scope.launch {
                         state = state.copy(isLoading = true, errorMessage = null)
                         val (loadedState, loadedFiles) = loadFolderData(uri)
@@ -592,7 +624,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onOpenRecentEvents = {
                             if (hasFolderPermission() && hasCameraPermission) {
-                                screen = SafeClipScreen.VideoBrowser
+                                screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.Blackbox)
                             } else {
                                 state = state.copy(errorMessage = "폴더 권한과 카메라 권한을 먼저 켜주세요.")
                             }
@@ -602,6 +634,10 @@ class MainActivity : ComponentActivity() {
                                 eventFolderPicker.launch(null)
                             } else if (it == FolderViewKind.SafeClipSaved && !(hasFolderPermission() && hasCameraPermission)) {
                                 state = state.copy(errorMessage = "폴더 권한과 카메라 권한을 먼저 켜주세요.")
+                            } else if (it == FolderViewKind.SafeClipSaved) {
+                                screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.SafeClip)
+                            } else if (it == FolderViewKind.CurrentFolder) {
+                                screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.Blackbox)
                             } else {
                                 openFolderManager(it)
                             }
@@ -668,7 +704,7 @@ class MainActivity : ComponentActivity() {
                                 folderManagerMessage = if (ok) {
                                     "삭제 완료: ${file.displayName}"
                                 } else {
-                                    "삭제하지 못했습니다. 현재 폴더를 다시 선택해 쓰기 권한을 허용해주세요."
+                                    "삭제하지 못했습니다. 블랙박스 폴더를 다시 선택해 쓰기 권한을 허용해주세요."
                                 }
                                 refreshSavedMediaCountAsync()
                                 reloadCurrentFolderIfPossibleAsync()
@@ -698,36 +734,73 @@ class MainActivity : ComponentActivity() {
                                 file = file,
                                 folderPath = FolderManagerText.title(currentScreen.kind)
                             )
+                            val attachment = SubmissionAttachment.fromManagedFile(
+                                file = file,
+                                folderPath = FolderManagerText.title(currentScreen.kind)
+                            )
                             if (video != null) {
-                                screen = SafeClipScreen.SubmissionForm(video, null)
+                                val sourceFiles = submissionAttachmentSourceFiles()
+                                screen = SafeClipScreen.SubmissionForm(
+                                    video = video,
+                                    clip = null,
+                                    initialAttachment = attachment ?: SubmissionAttachment.fromVideoCandidate(video),
+                                    availableFiles = sourceFiles.selectedFolderFiles,
+                                    availableFolderPath = FolderManagerText.title(currentScreen.kind),
+                                    eventFiles = sourceFiles.eventFolderFiles
+                                )
                             } else {
                                 folderManagerMessage = "영상 또는 JPG 파일만 제출할 수 있습니다."
                             }
                         }
                     )
 
-                    SafeClipScreen.VideoBrowser -> VideoBrowserScreen(
+                    is SafeClipScreen.VideoBrowser -> VideoBrowserScreen(
                         state = state,
-                        files = currentFolderFilesOrFallback(),
-                        onPlayVideo = { file ->
+                        blackboxFiles = currentFolderFilesOrFallback(),
+                        safeClipFiles = eventFolderFiles,
+                        initialSource = currentScreen.initialSource,
+                        onPlayVideo = { file, source ->
+                            val folderPath = browserFolderPath(file, source)
                             val video = ManagedFolderVideoCandidate.from(
                                 file = file,
-                                folderPath = state.selectedFolderName ?: "현재 폴더"
+                                folderPath = folderPath
                             )
                             if (video != null) {
-                                screen = SafeClipScreen.VideoPreview(video)
+                                screen = SafeClipScreen.VideoPreview(video, returnScreen = currentScreen)
                             }
                         },
-                        onPreviewImage = { file ->
-                            screen = SafeClipScreen.ImagePreview(file, FolderViewKind.CurrentFolder)
+                        onPreviewImage = { file, source ->
+                            val sourceKind = if (isSafeClipBrowserFile(file, source)) {
+                                FolderViewKind.SafeClipSaved
+                            } else {
+                                FolderViewKind.CurrentFolder
+                            }
+                            screen = SafeClipScreen.ImagePreview(
+                                file = file,
+                                sourceKind = sourceKind,
+                                returnScreen = currentScreen
+                            )
                         },
-                        onSubmitFile = { file ->
+                        onSubmitFile = { file, source ->
+                            val folderPath = browserFolderPath(file, source)
                             val video = ManagedFolderVideoCandidate.fromSubmittableFile(
                                 file = file,
-                                folderPath = state.selectedFolderName ?: "현재 폴더"
+                                folderPath = folderPath
+                            )
+                            val attachment = SubmissionAttachment.fromManagedFile(
+                                file = file,
+                                folderPath = folderPath
                             )
                             if (video != null) {
-                                screen = SafeClipScreen.SubmissionForm(video, null)
+                                val sourceFiles = submissionAttachmentSourceFiles()
+                                screen = SafeClipScreen.SubmissionForm(
+                                    video = video,
+                                    clip = null,
+                                    initialAttachment = attachment ?: SubmissionAttachment.fromVideoCandidate(video),
+                                    availableFiles = sourceFiles.selectedFolderFiles,
+                                    availableFolderPath = folderPath,
+                                    eventFiles = sourceFiles.eventFolderFiles
+                                )
                             }
                         },
                         onBackHome = ::goBack
@@ -751,7 +824,15 @@ class MainActivity : ComponentActivity() {
                             result
                         },
                         onSubmit = { selected, clip ->
-                            screen = SafeClipScreen.SubmissionForm(selected, clip)
+                            val sourceFiles = submissionAttachmentSourceFiles()
+                            screen = SafeClipScreen.SubmissionForm(
+                                video = selected,
+                                clip = clip,
+                                initialAttachment = SubmissionAttachment.fromVideoCandidate(selected),
+                                availableFiles = sourceFiles.selectedFolderFiles,
+                                availableFolderPath = selected.folderPath,
+                                eventFiles = sourceFiles.eventFolderFiles
+                            )
                         }
                     )
 
@@ -761,19 +842,57 @@ class MainActivity : ComponentActivity() {
                     )
 
                     is SafeClipScreen.SubmissionForm -> SubmissionFormScreen(
-                        video = currentScreen.video,
                         clip = currentScreen.clip,
+                        initialAttachment = currentScreen.initialAttachment,
+                        availableFiles = currentScreen.availableFiles,
+                        availableFolderPath = currentScreen.availableFolderPath,
+                        eventFiles = currentScreen.eventFiles,
+                        onLoadRepresentativeMetadata = { attachment ->
+                            submissionMetadataReader.read(attachment)
+                        },
                         onBack = ::goBack,
-                        onSubmit = { draft ->
+                        onSubmit = { draft, representativeAttachment, attachments ->
                             scope.launch {
+                                if (!nasUploadClient.isConfigured()) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "NAS 업로드 설정이 없습니다. local.properties에 safeclip.nasUploadUrl/key를 설정해주세요.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    return@launch
+                                }
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "NAS로 첨부 파일을 업로드합니다.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+
                                 val ownerUid = firebaseAuthConnector.currentUserUid()
+                                val submissionId = "safeclip-${System.currentTimeMillis()}"
+                                val uploadedAttachments = try {
+                                    nasUploadClient.uploadAll(
+                                        submissionId = submissionId,
+                                        attachments = attachments
+                                    )
+                                } catch (exception: Exception) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        exception.localizedMessage ?: "NAS 업로드에 실패했습니다.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    return@launch
+                                }
+                                val uploadedRepresentative = uploadedAttachments.firstOrNull {
+                                    it.uriString == representativeAttachment.uriString
+                                } ?: representativeAttachment
                                 val input = SubmissionInput(
                                     ownerUid = ownerUid,
-                                    video = currentScreen.video,
+                                    video = uploadedRepresentative.toRepresentativeVideoCandidate(),
                                     draft = draft,
                                     guestId = if (ownerUid == null) guestId else syncedUserProfile?.guestId,
                                     ownerDisplayName = syncedUserProfile?.displayName,
-                                    ownerEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail()
+                                    ownerEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
+                                    attachments = uploadedAttachments
                                 )
                                 when (val result = submissionRepository.add(input)) {
                                     is SubmissionSaveResult.Success -> {

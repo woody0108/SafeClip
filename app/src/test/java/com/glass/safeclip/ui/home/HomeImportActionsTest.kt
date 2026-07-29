@@ -15,8 +15,9 @@ class HomeImportActionsTest {
             cameraPermissionGranted = true
         )
 
-        assertEquals("폴더 선택하기", actions.folderButtonText)
+        assertEquals("블랙박스 폴더 선택", actions.folderButtonText)
         assertTrue(actions.folderButtonIsPrimary)
+        assertFalse(actions.showRecentButton)
         assertFalse(actions.recentButtonIsPrimary)
         assertFalse(actions.recentButtonEnabled)
         assertFalse(actions.eventFolderEnabled)
@@ -32,6 +33,7 @@ class HomeImportActionsTest {
         )
 
         assertFalse(actions.folderButtonIsPrimary)
+        assertFalse(actions.showRecentButton)
         assertTrue(actions.recentButtonIsPrimary)
         assertTrue(actions.recentButtonEnabled)
         assertTrue(actions.eventFolderEnabled)
@@ -47,6 +49,7 @@ class HomeImportActionsTest {
         )
 
         assertFalse(actions.folderButtonIsPrimary)
+        assertFalse(actions.showRecentButton)
         assertFalse(actions.recentButtonIsPrimary)
         assertFalse(actions.recentButtonEnabled)
         assertFalse(actions.eventFolderEnabled)

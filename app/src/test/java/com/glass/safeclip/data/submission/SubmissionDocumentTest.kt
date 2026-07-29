@@ -52,6 +52,59 @@ class SubmissionDocumentTest {
     }
 
     @Test
+    fun createFieldsStoresAttachmentListAndCounts() {
+        val input = SubmissionInput(
+            ownerUid = null,
+            video = video,
+            draft = draft,
+            guestId = "guest-1",
+            attachments = listOf(
+                attachment("content://front", "front.mp4", "video/mp4", SubmissionAttachmentKind.Video),
+                attachment("content://plate", "plate.jpg", "image/jpeg", SubmissionAttachmentKind.Photo)
+            )
+        )
+
+        val fields = SubmissionDocument.createFields(input)
+
+        assertEquals(1, fields["videoCount"])
+        assertEquals(1, fields["photoCount"])
+        val attachments = fields["attachments"] as List<Map<String, Any?>>
+        assertEquals("front.mp4", attachments[0]["displayName"])
+        assertEquals("video", attachments[0]["kind"])
+        assertEquals("plate.jpg", attachments[1]["displayName"])
+        assertEquals("photo", attachments[1]["kind"])
+    }
+
+    @Test
+    fun createFieldsStoresNasUploadPaths() {
+        val uploaded = attachment(
+            uriString = "content://front",
+            displayName = "front.mp4",
+            mimeType = "video/mp4",
+            kind = SubmissionAttachmentKind.Video
+        ).copy(
+            nasStoredName = "stored.mp4",
+            nasRelativePath = "2026/07/29/stored.mp4",
+            uploadedSizeBytes = 1234L
+        )
+        val input = SubmissionInput(
+            ownerUid = null,
+            video = video,
+            draft = draft,
+            guestId = "guest-1",
+            attachments = listOf(uploaded)
+        )
+
+        val fields = SubmissionDocument.createFields(input)
+
+        assertEquals("2026/07/29/stored.mp4", fields["nasRelativePath"])
+        val attachments = fields["attachments"] as List<Map<String, Any?>>
+        assertEquals("stored.mp4", attachments[0]["nasStoredName"])
+        assertEquals("2026/07/29/stored.mp4", attachments[0]["nasRelativePath"])
+        assertEquals(1234L, attachments[0]["uploadedSizeBytes"])
+    }
+
+    @Test
     fun keepsOwnerUidEmptyForGuestSubmission() {
         val input = SubmissionInput(
             ownerUid = null,
@@ -152,5 +205,21 @@ class SubmissionDocumentTest {
         val fields = SubmissionDocument.guestOwnerLinkFields(profile)
 
         assertEquals("safeclip@example.com", fields["ownerDisplayName"])
+    }
+
+    private fun attachment(
+        uriString: String,
+        displayName: String,
+        mimeType: String,
+        kind: SubmissionAttachmentKind
+    ): SubmissionAttachment {
+        return SubmissionAttachment(
+            uriString = uriString,
+            displayName = displayName,
+            mimeType = mimeType,
+            sizeBytes = 100L,
+            folderPath = "현재 폴더",
+            kind = kind
+        )
     }
 }

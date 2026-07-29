@@ -2,7 +2,9 @@ package com.glass.safeclip.ui.navigation
 
 import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.data.file.ManagedFolderFile
+import com.glass.safeclip.data.submission.SubmissionAttachment
 import com.glass.safeclip.ui.folder.FolderViewKind
+import com.glass.safeclip.ui.video.VideoBrowserSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -33,12 +35,18 @@ class SafeClipBackNavigationTest {
 
     @Test
     fun browserBackGoesToHome() {
-        assertEquals(SafeClipScreen.Home, SafeClipBackNavigation.previousScreen(SafeClipScreen.VideoBrowser))
+        assertEquals(
+            SafeClipScreen.Home,
+            SafeClipBackNavigation.previousScreen(SafeClipScreen.VideoBrowser(VideoBrowserSource.SafeClip))
+        )
     }
 
     @Test
     fun previewBackGoesToBrowser() {
-        assertEquals(SafeClipScreen.VideoBrowser, SafeClipBackNavigation.previousScreen(SafeClipScreen.VideoPreview(video)))
+        assertEquals(
+            SafeClipScreen.VideoBrowser(),
+            SafeClipBackNavigation.previousScreen(SafeClipScreen.VideoPreview(video))
+        )
     }
 
     @Test
@@ -53,7 +61,16 @@ class SafeClipBackNavigationTest {
 
     @Test
     fun submissionFormBackGoesToPreviewForSameVideo() {
-        val previous = SafeClipBackNavigation.previousScreen(SafeClipScreen.SubmissionForm(video, null))
+        val previous = SafeClipBackNavigation.previousScreen(
+            SafeClipScreen.SubmissionForm(
+                video = video,
+                clip = null,
+                initialAttachment = SubmissionAttachment.fromVideoCandidate(video),
+                availableFiles = emptyList(),
+                availableFolderPath = "EVENT",
+                eventFiles = emptyList()
+            )
+        )
 
         assertEquals(SafeClipScreen.VideoPreview(video), previous)
     }

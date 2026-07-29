@@ -7,7 +7,7 @@ object SafeClipBackNavigation {
             SafeClipScreen.Start -> null
             SafeClipScreen.Connecting -> SafeClipScreen.Start
             SafeClipScreen.Home -> SafeClipScreen.Start
-            SafeClipScreen.VideoBrowser -> SafeClipScreen.Home
+            is SafeClipScreen.VideoBrowser -> SafeClipScreen.Home
             is SafeClipScreen.FolderManager -> SafeClipScreen.Home
             is SafeClipScreen.VideoPreview -> screen.returnScreen
             is SafeClipScreen.ImagePreview -> screen.returnScreen

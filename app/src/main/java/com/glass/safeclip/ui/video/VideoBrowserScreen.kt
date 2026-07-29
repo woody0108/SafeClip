@@ -21,12 +21,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.glass.safeclip.data.file.ManagedFolderFile
 import com.glass.safeclip.data.file.ManagedFolderVideoCandidate
-import com.glass.safeclip.domain.model.VideoCandidate
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
 import com.glass.safeclip.ui.components.SafeClipTopBar
 import com.glass.safeclip.ui.components.SecondaryActionButton
+import com.glass.safeclip.ui.components.SegmentedTabButton
 import com.glass.safeclip.ui.components.StatusChip
 import com.glass.safeclip.ui.components.StatusTone
 import com.glass.safeclip.ui.folder.FolderFileFilter
@@ -34,14 +34,17 @@ import com.glass.safeclip.ui.folder.FolderFileFilter
 @Composable
 fun VideoBrowserScreen(
     state: VideoListState,
-    files: List<ManagedFolderFile>,
-    onPlayVideo: (ManagedFolderFile) -> Unit,
-    onPreviewImage: (ManagedFolderFile) -> Unit,
-    onSubmitFile: (ManagedFolderFile) -> Unit,
+    blackboxFiles: List<ManagedFolderFile>,
+    safeClipFiles: List<ManagedFolderFile>,
+    initialSource: VideoBrowserSource,
+    onPlayVideo: (ManagedFolderFile, VideoBrowserSource) -> Unit,
+    onPreviewImage: (ManagedFolderFile, VideoBrowserSource) -> Unit,
+    onSubmitFile: (ManagedFolderFile, VideoBrowserSource) -> Unit,
     onBackHome: () -> Unit
 ) {
+    var selectedSource by remember(initialSource) { mutableStateOf(initialSource) }
     var selectedFilter by remember { mutableStateOf(FolderFileFilter.All) }
-    val displayFiles = files.ifEmpty {
+    val blackboxDisplayFiles = blackboxFiles.ifEmpty {
         state.videos.map { video ->
             ManagedFolderFile(
                 uriString = video.uriString,
@@ -51,6 +54,10 @@ fun VideoBrowserScreen(
             )
         }
     }
+    val displayFiles = selectedSource.select(
+        blackboxFiles = blackboxDisplayFiles,
+        safeClipFiles = safeClipFiles
+    )
     val visibleFiles = selectedFilter.apply(displayFiles)
     var selectedFile by remember(visibleFiles) { mutableStateOf(visibleFiles.firstOrNull()) }
 
@@ -60,17 +67,25 @@ fun VideoBrowserScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             SafeClipTopBar(
-                title = "이벤트 영상 확인",
-                subtitle = state.selectedFolderName ?: "블랙박스 폴더를 선택해주세요",
+                title = "파일 확인",
+                subtitle = when (selectedSource) {
+                    VideoBrowserSource.All -> "블랙박스 폴더 + SafeClip 폴더"
+                    VideoBrowserSource.Blackbox -> state.selectedFolderName ?: "블랙박스 폴더"
+                    VideoBrowserSource.SafeClip -> "SafeClip 폴더"
+                },
                 trailing = {
                     SecondaryActionButton(text = "홈", onClick = onBackHome)
                 }
             )
 
             GlassPanel(modifier = Modifier.fillMaxWidth()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatusChip(label = "전체", tone = StatusTone.Info)
-                }
+                VideoSourceTabs(
+                    selectedSource = selectedSource,
+                    onSourceSelected = {
+                        selectedSource = it
+                        selectedFilter = FolderFileFilter.All
+                    }
+                )
                 Text(
                     text = "파일 후보 ${visibleFiles.size}개",
                     fontWeight = FontWeight.Bold,
@@ -100,9 +115,9 @@ fun VideoBrowserScreen(
                     )
                     SelectedVideoPanel(
                         file = selectedFile ?: visibleFiles.first(),
-                        onPlayVideo = onPlayVideo,
-                        onPreviewImage = onPreviewImage,
-                        onSubmitFile = onSubmitFile
+                        onPlayVideo = { onPlayVideo(it, selectedSource) },
+                        onPreviewImage = { onPreviewImage(it, selectedSource) },
+                        onSubmitFile = { onSubmitFile(it, selectedSource) }
                     )
                 }
             }
@@ -131,11 +146,28 @@ private fun VideoFileFilterTabs(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FolderFileFilter.values().forEach { filter ->
-            SecondaryActionButton(
+            SegmentedTabButton(
                 text = filter.label,
                 onClick = { onFilterSelected(filter) },
                 modifier = Modifier.weight(1f),
-                enabled = filter != selectedFilter
+                selected = filter == selectedFilter
+            )
+        }
+    }
+}
+
+@Composable
+private fun VideoSourceTabs(
+    selectedSource: VideoBrowserSource,
+    onSourceSelected: (VideoBrowserSource) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VideoBrowserSource.values().forEach { source ->
+            SegmentedTabButton(
+                text = source.label,
+                onClick = { onSourceSelected(source) },
+                modifier = Modifier.weight(1f),
+                selected = source == selectedSource
             )
         }
     }

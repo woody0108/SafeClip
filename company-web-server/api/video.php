@@ -16,8 +16,8 @@ if ($id === '') {
 $config = app_config();
 $samplePrefix = 'sample-';
 if (str_starts_with($id, $samplePrefix)) {
-    $sampleName = rawurldecode(substr($id, strlen($samplePrefix)));
-    $samplePath = sample_video_path($config, $sampleName);
+    $sampleName = clean_relative_path(rawurldecode(substr($id, strlen($samplePrefix))));
+    $samplePath = resolve_video_file_path($config, $sampleName);
     if ($samplePath === '' || !is_file($samplePath)) {
         json_fail(404, 'Sample video file was not found.');
     }
@@ -100,6 +100,7 @@ function mime_for_extension(string $extension): string
         'mov' => 'video/quicktime',
         'avi' => 'video/x-msvideo',
         'ts' => 'video/mp2t',
+        'jpg', 'jpeg' => 'image/jpeg',
         default => 'video/mp4',
     };
 }

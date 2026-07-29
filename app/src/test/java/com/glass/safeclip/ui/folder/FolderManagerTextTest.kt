@@ -6,14 +6,14 @@ import org.junit.Test
 class FolderManagerTextTest {
     @Test
     fun titlesDescribeManagedFolderKind() {
-        assertEquals("SafeClip 저장함", FolderManagerText.title(FolderViewKind.SafeClipSaved))
-        assertEquals("현재 폴더", FolderManagerText.title(FolderViewKind.CurrentFolder))
+        assertEquals("SafeClip 폴더", FolderManagerText.title(FolderViewKind.SafeClipSaved))
+        assertEquals("블랙박스 폴더", FolderManagerText.title(FolderViewKind.CurrentFolder))
     }
 
     @Test
     fun emptyMessagesDescribeManagedFolderKind() {
-        assertEquals("저장된 캡쳐나 클립이 없습니다.", FolderManagerText.emptyMessage(FolderViewKind.SafeClipSaved))
-        assertEquals("현재 폴더에 표시할 영상이 없습니다.", FolderManagerText.emptyMessage(FolderViewKind.CurrentFolder))
+        assertEquals("SafeClip 폴더에 저장된 캡쳐나 클립이 없습니다.", FolderManagerText.emptyMessage(FolderViewKind.SafeClipSaved))
+        assertEquals("블랙박스 폴더에 표시할 파일이 없습니다.", FolderManagerText.emptyMessage(FolderViewKind.CurrentFolder))
     }
 
     @Test

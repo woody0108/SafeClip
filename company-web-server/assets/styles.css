@@ -222,7 +222,8 @@ h2 {
   position: relative;
 }
 
-video {
+video,
+.video-frame img {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -231,8 +232,14 @@ video {
   background: #020812;
 }
 
-video:not([src]) {
+.video-frame img {
+  object-fit: contain;
+}
+
+video:not([src]),
+.video-frame img:not([src]) {
   opacity: 0.25;
+  display: none;
 }
 
 .video-placeholder {

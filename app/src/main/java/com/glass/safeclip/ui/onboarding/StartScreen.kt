@@ -263,7 +263,7 @@ fun ConnectingScreen() {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "이벤트 폴더와 이전 선택 정보를 확인하고 있습니다.",
+                text = "SafeClip 폴더와 이전 선택 정보를 확인하고 있습니다.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(top = 8.dp)

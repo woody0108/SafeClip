@@ -25,11 +25,11 @@ try {
         fail(401, 'Invalid upload key.');
     }
 
-    if (!isset($_FILES['video'])) {
-        fail(400, 'Missing video file field.');
+    $file = upload_file_from_request();
+    if ($file === null) {
+        fail(400, 'Missing upload file field.');
     }
 
-    $file = $_FILES['video'];
     if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         fail(400, upload_error_message((int)($file['error'] ?? UPLOAD_ERR_NO_FILE)));
     }
@@ -47,7 +47,7 @@ try {
     $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
     $allowedExtensions = array_map('strtolower', (array)($config['allowed_extensions'] ?? []));
     if (!in_array($extension, $allowedExtensions, true)) {
-        fail(415, 'Unsupported video extension.');
+        fail(415, 'Unsupported file extension.');
     }
 
     $storageDir = rtrim((string)($config['storage_dir'] ?? ''), "/\\");
@@ -94,6 +94,17 @@ function upload_key_from_request(): string
     return (string)($_POST['upload_key'] ?? '');
 }
 
+function upload_file_from_request(): ?array
+{
+    if (isset($_FILES['file'])) {
+        return $_FILES['file'];
+    }
+    if (isset($_FILES['video'])) {
+        return $_FILES['video'];
+    }
+    return null;
+}
+
 function sanitize_name(string $value): string
 {
     $value = trim($value);
@@ -114,7 +125,7 @@ function ensure_directory(string $path): void
     }
 
     if (!mkdir($path, 0770, true) && !is_dir($path)) {
-        fail(500, 'Could not create NAS upload date folder.');
+        fail(500, 'Could not create NAS upload date folder: ' . $path);
     }
 }
 

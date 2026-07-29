@@ -1,5 +1,7 @@
 package com.glass.safeclip.ui.submission
 
+import com.glass.safeclip.data.submission.SubmissionAttachment
+
 data class SubmissionDraft(
     val incidentDateTime: String = "",
     val locationText: String = "",
@@ -17,4 +19,21 @@ data class SubmissionDraft(
             reviewConsent &&
             storageConsent &&
             dataUseConsent
+
+    fun canSubmitWith(attachments: List<SubmissionAttachment>): Boolean {
+        return isReadyToSubmit && attachments.isNotEmpty()
+    }
+
+    companion object {
+        fun sanitizeIncidentDateTimeInput(value: String): String {
+            return value.filter { character ->
+                character.isDigit() ||
+                    character == '.' ||
+                    character == ':' ||
+                    character == '-' ||
+                    character == '/' ||
+                    character == ' '
+            }
+        }
+    }
 }

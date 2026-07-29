@@ -66,8 +66,10 @@ Assert-FileContains $bootstrapPhp 'openssl_sign' 'Bootstrap must detect signing 
 Assert-FileContains $bootstrapPhp 'firebase_error_message' 'Bootstrap must expose Firebase error details.'
 Assert-FileContains $bootstrapPhp 'Firebase request failed:' 'Firestore API failures must include Firebase response details.'
 Assert-FileContains $videoPhp 'Range' 'Video API must support browser video seeking.'
-Assert-FileContains $videoPhp 'sample_video_path' 'Video API must stream sample videos from the sample folder.'
-Assert-FileContains $bootstrapPhp 'SafeClipUploads' 'Video API must read from the NAS upload storage folder.'
+Assert-FileContains $videoPhp 'resolve_video_file_path' 'Video API must resolve files from the NAS upload storage folder.'
+Assert-FileContains $bootstrapPhp 'SafeClipUpLoads' 'Video API must read from the NAS upload storage folder.'
+Assert-FileContains $bootstrapPhp 'RecursiveDirectoryIterator' 'Video API must search nested NAS date/time folders.'
+Assert-FileContains $bootstrapPhp 'jpg' 'Video API must allow submitted JPEG photos.'
 Assert-FileContains $submissionsPhp 'submissions' 'Submissions API must read the Firestore submissions collection.'
 Assert-FileContains $submissionsPhp 'sample_submissions_from_folder' 'Submissions API must fall back to NAS sample video folder.'
 Assert-FileContains $submissionsPhp "\\$_GET\\['mode'\\]" 'Sample folder mode must be explicit, not the default.'
@@ -76,7 +78,7 @@ Assert-FileContains $submissionsPhp 'save_json_cache' 'Submissions API must save
 Assert-FileContains $submissionsPhp 'submitterLabel' 'Submissions API must normalize submitter label.'
 Assert-FileContains $submissionsPhp 'raw' 'Submissions API must include raw Firestore fields for inspection.'
 Assert-FileContains $config 'service_account_json' 'Config must use a server-side Firebase service account file.'
-Assert-FileContains $config 'Videos' 'Config example must include the NAS sample video folder.'
+Assert-FileContains $config 'SafeClipUpLoads' 'Config example must include the NAS upload folder.'
 
 $indexContent = Get-Content -LiteralPath $index -Raw
 $appContent = Get-Content -LiteralPath $appJs -Raw

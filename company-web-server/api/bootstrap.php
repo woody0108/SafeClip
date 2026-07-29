@@ -25,7 +25,12 @@ function app_config(): array
 
 function sample_video_dir(array $config): string
 {
-    return rtrim((string)($config['sample_video_dir'] ?? '/volume1/Videos'), "/\\");
+    return rtrim((string)($config['sample_video_dir'] ?? storage_dir($config)), "/\\");
+}
+
+function allowed_review_extension(string $path): bool
+{
+    return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['mp4', 'mov', 'avi', 'ts', 'jpg', 'jpeg'], true);
 }
 
 function allowed_video_extension(string $path): bool
@@ -33,27 +38,45 @@ function allowed_video_extension(string $path): bool
     return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['mp4', 'mov', 'avi', 'ts'], true);
 }
 
+function is_image_extension(string $path): bool
+{
+    return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg'], true);
+}
+
 function sample_video_path(array $config, string $fileName): string
 {
     $fileName = basename(str_replace('\\', '/', $fileName));
-    if ($fileName === '' || !allowed_video_extension($fileName)) {
+    if ($fileName === '' || !allowed_review_extension($fileName)) {
         return '';
     }
 
-    return sample_video_dir($config) . DIRECTORY_SEPARATOR . $fileName;
+    $directPath = sample_video_dir($config) . DIRECTORY_SEPARATOR . $fileName;
+    if (is_file($directPath)) {
+        return $directPath;
+    }
+
+    return find_file_by_basename(sample_video_dir($config), $fileName);
 }
 
 function find_video_path(array $config, array $fields): string
 {
     $nasFiles = is_array($fields['nasFiles'] ?? null) ? $fields['nasFiles'] : [];
+    $attachments = is_array($fields['attachments'] ?? null) ? $fields['attachments'] : [];
     $candidates = [
         (string)($nasFiles['front'] ?? ''),
         (string)($nasFiles['rear'] ?? ''),
+        (string)($nasFiles['file1'] ?? ''),
         (string)($fields['frontVideoPath'] ?? ''),
         (string)($fields['rearVideoPath'] ?? ''),
         (string)($fields['nasRelativePath'] ?? ''),
-        (string)($fields['originalFileName'] ?? ''),
     ];
+    foreach ($attachments as $attachment) {
+        if (is_array($attachment)) {
+            $candidates[] = (string)($attachment['nasRelativePath'] ?? '');
+            $candidates[] = (string)($attachment['displayName'] ?? '');
+        }
+    }
+    $candidates[] = (string)($fields['originalFileName'] ?? '');
 
     foreach ($candidates as $candidate) {
         $path = clean_relative_path($candidate);
@@ -68,7 +91,7 @@ function find_video_path(array $config, array $fields): string
 function resolve_video_file_path(array $config, string $relativePath): string
 {
     $relativePath = clean_relative_path($relativePath);
-    if ($relativePath === '' || !allowed_video_extension($relativePath)) {
+    if ($relativePath === '' || !allowed_review_extension($relativePath)) {
         return '';
     }
 
@@ -77,10 +100,42 @@ function resolve_video_file_path(array $config, string $relativePath): string
         return $samplePath;
     }
 
-    $storageDir = rtrim((string)($config['storage_dir'] ?? '/volume1/SafeClipUploads'), "/\\");
+    $storageDir = storage_dir($config);
     $storedPath = $storageDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
     if (is_file($storedPath)) {
         return $storedPath;
+    }
+
+    return find_file_by_basename($storageDir, basename($relativePath));
+}
+
+function storage_dir(array $config): string
+{
+    return rtrim((string)($config['storage_dir'] ?? '/volume1/SafeClipUpLoads'), "/\\");
+}
+
+function find_file_by_basename(string $rootDir, string $fileName): string
+{
+    $fileName = basename(str_replace('\\', '/', $fileName));
+    if ($fileName === '' || !is_dir($rootDir)) {
+        return '';
+    }
+
+    try {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($rootDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+            if ($file->getFilename() === $fileName && allowed_review_extension($file->getPathname())) {
+                return $file->getPathname();
+            }
+        }
+    } catch (UnexpectedValueException) {
+        return '';
     }
 
     return '';
@@ -214,6 +269,9 @@ function firestore_value(array $field): mixed
             $result[$key] = firestore_value($value);
         }
         return $result;
+    }
+    if (isset($field['arrayValue']['values']) && is_array($field['arrayValue']['values'])) {
+        return array_map(static fn(array $value): mixed => firestore_value($value), $field['arrayValue']['values']);
     }
 
     return null;

@@ -30,6 +30,11 @@ object SubmissionDocument {
             "reportReviewConsent" to input.draft.reviewConsent,
             "videoStorageConsent" to input.draft.storageConsent,
             "trafficRiskDataConsent" to input.draft.dataUseConsent,
+            "attachments" to input.attachments.map { it.toFirestoreFields() },
+            "videoCount" to input.attachments.count { it.kind == SubmissionAttachmentKind.Video },
+            "photoCount" to input.attachments.count { it.kind == SubmissionAttachmentKind.Photo },
+            "nasRelativePath" to input.attachments.firstOrNull()?.nasRelativePath,
+            "nasFiles" to nasFiles(input.attachments),
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
@@ -87,6 +92,15 @@ object SubmissionDocument {
             "completed" -> SubmissionStatus.Completed
             else -> SubmissionStatus.WaitingReview
         }
+    }
+
+    private fun nasFiles(attachments: List<SubmissionAttachment>): Map<String, String> {
+        val uploaded = attachments.mapNotNull { attachment ->
+            attachment.nasRelativePath?.let { path -> attachment to path }
+        }
+        return uploaded.mapIndexed { index, (_, path) ->
+            "file${index + 1}" to path
+        }.toMap()
     }
 
     private const val STATUS_WAITING_REVIEW = "waiting_review"

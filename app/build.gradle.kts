@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.google.services)
     alias(libs.plugins.kotlin.compose)
+}
+
+val localProperties = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -20,6 +29,16 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "SAFECLIP_NAS_UPLOAD_URL",
+            "\"${localProperties.getProperty("safeclip.nasUploadUrl", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "SAFECLIP_NAS_UPLOAD_KEY",
+            "\"${localProperties.getProperty("safeclip.nasUploadKey", "")}\""
+        )
     }
 
     buildTypes {
@@ -35,6 +54,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

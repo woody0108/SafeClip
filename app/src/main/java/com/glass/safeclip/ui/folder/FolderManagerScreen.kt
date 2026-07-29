@@ -33,6 +33,7 @@ import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
 import com.glass.safeclip.ui.components.SafeClipTopBar
 import com.glass.safeclip.ui.components.SecondaryActionButton
+import com.glass.safeclip.ui.components.SegmentedTabButton
 import com.glass.safeclip.ui.theme.SafeClipBorder
 import com.glass.safeclip.ui.theme.SafeClipCyan
 import com.glass.safeclip.ui.video.VideoListText
@@ -137,23 +138,12 @@ private fun FolderFilterTabs(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         FolderFileFilter.values().forEach { filter ->
-            val selected = filter == selectedFilter
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onFilterSelected(filter) },
-                shape = RoundedCornerShape(8.dp),
-                color = if (selected) SafeClipCyan.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, if (selected) SafeClipCyan else SafeClipBorder)
-            ) {
-                Text(
-                    text = filter.label,
-                    modifier = Modifier.padding(vertical = 10.dp),
-                    color = if (selected) SafeClipCyan else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            }
+            SegmentedTabButton(
+                text = filter.label,
+                selected = filter == selectedFilter,
+                onClick = { onFilterSelected(filter) },
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
