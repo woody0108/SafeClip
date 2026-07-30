@@ -1,6 +1,7 @@
 package com.glass.safeclip
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -12,6 +13,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,6 +26,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.glass.safeclip.data.auth.AuthConnectionResult
 import com.glass.safeclip.app.AuthUserProfileFactory
@@ -33,6 +41,11 @@ import com.glass.safeclip.app.SubmittedFilePreviewRoute
 import com.glass.safeclip.app.SubmissionAttachmentSourceFiles
 import com.glass.safeclip.app.SubmissionLookupSelector
 import com.glass.safeclip.data.auth.FirebaseAuthConnector
+import com.glass.safeclip.data.ask.AskDeleteResult
+import com.glass.safeclip.data.ask.AskItem
+import com.glass.safeclip.data.ask.AskListResult
+import com.glass.safeclip.data.ask.AskSaveResult
+import com.glass.safeclip.data.ask.FirestoreAskRepository
 import com.glass.safeclip.data.file.AndroidDocumentTreeVideoSource
 import com.glass.safeclip.data.file.AndroidManagedFileOperator
 import com.glass.safeclip.data.file.LastSelectedEventFolderStore
@@ -54,6 +67,7 @@ import com.glass.safeclip.data.profile.UserProfileSyncResult
 import com.glass.safeclip.data.submission.FirestoreSubmissionRepository
 import com.glass.safeclip.data.submission.AndroidSubmissionMetadataReader
 import com.glass.safeclip.data.submission.NasSubmissionUploadClient
+import com.glass.safeclip.data.submission.NasSubmissionUploadProgress
 import com.glass.safeclip.data.submission.SubmissionAttachment
 import com.glass.safeclip.data.submission.SubmissionInput
 import com.glass.safeclip.data.submission.SubmissionListResult
@@ -69,6 +83,7 @@ import com.glass.safeclip.ui.navigation.SafeClipScreen
 import com.glass.safeclip.ui.onboarding.BootLoadingScreen
 import com.glass.safeclip.ui.onboarding.ConnectingScreen
 import com.glass.safeclip.ui.onboarding.StartScreen
+import com.glass.safeclip.ui.settings.AskScreen
 import com.glass.safeclip.ui.settings.SettingsScreen
 import com.glass.safeclip.ui.status.LocalSubmissionRecord
 import com.glass.safeclip.ui.status.SubmissionStatusScreen
@@ -102,7 +117,12 @@ class MainActivity : ComponentActivity() {
         val managedFileOperator = AndroidManagedFileOperator(this)
         val guestIdentityStore = GuestIdentityStore(this)
         val guestId = guestIdentityStore.loadOrCreate()
+        val reportWarningPreferences = getSharedPreferences(REPORT_WARNING_PREFERENCES, Context.MODE_PRIVATE)
         val firebaseAuthConnector = FirebaseAuthConnector(this)
+        val askRepository = FirestoreAskRepository(
+            askApiUrl = FirestoreAskRepository.askApiUrlFromUploadUrl(BuildConfig.SAFECLIP_NAS_UPLOAD_URL),
+            uploadKey = BuildConfig.SAFECLIP_NAS_UPLOAD_KEY
+        )
         val userProfileRepository = FirestoreUserProfileRepository()
         val submissionRepository = FirestoreSubmissionRepository()
         val submissionMetadataReader = AndroidSubmissionMetadataReader(this)
@@ -119,6 +139,8 @@ class MainActivity : ComponentActivity() {
                 var submissionRecords by remember { mutableStateOf<List<LocalSubmissionRecord>>(emptyList()) }
                 var authMessage by remember { mutableStateOf<String?>(null) }
                 var syncedUserProfile by remember { mutableStateOf<UserProfile?>(null) }
+                var askItems by remember { mutableStateOf<List<AskItem>>(emptyList()) }
+                var askLoading by remember { mutableStateOf(false) }
                 var folderManagerMessage by remember { mutableStateOf<String?>(null) }
                 var folderManagerFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
                 var currentFolderFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
@@ -126,6 +148,13 @@ class MainActivity : ComponentActivity() {
                 var folderManagerRefreshing by remember { mutableStateOf(false) }
                 var hasCameraPermission by remember { mutableStateOf(hasPermission(Manifest.permission.CAMERA)) }
                 var showExitConfirmDialog by remember { mutableStateOf(false) }
+                var showReportWarningDialog by remember {
+                    mutableStateOf(!reportWarningPreferences.getBoolean(REPORT_WARNING_DISMISSED_KEY, false))
+                }
+                var hideReportWarningAgain by remember { mutableStateOf(false) }
+                var nasUploadProgress by remember { mutableStateOf<NasSubmissionUploadProgress?>(null) }
+                var nasUploadFailureMessage by remember { mutableStateOf<String?>(null) }
+                var retryUploadSubmissionId by remember { mutableStateOf<String?>(null) }
                 var pendingFileOperation by remember {
                     mutableStateOf<Pair<ManagedFolderFile, ManagedFileOperation>?>(null)
                 }
@@ -389,6 +418,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun currentAskId(): String {
+                    return syncedUserProfile?.uid ?: guestId
+                }
+
+                suspend fun loadAskItems() {
+                    askLoading = true
+                    when (val result = askRepository.listById(currentAskId())) {
+                        is AskListResult.Success -> {
+                            askItems = result.items
+                        }
+                        is AskListResult.Failed -> {
+                            authMessage = result.message
+                        }
+                    }
+                    askLoading = false
+                }
+
+                fun loadAskItemsAsync() {
+                    scope.launch {
+                        loadAskItems()
+                    }
+                }
+
                 suspend fun loadSubmissionRecords() {
                     val lookupKey = SubmissionLookupSelector.from(
                         ownerUid = firebaseAuthConnector.currentUserUid(),
@@ -419,6 +471,16 @@ class MainActivity : ComponentActivity() {
                     enabled = screen != SafeClipScreen.Start && SafeClipBackNavigation.previousScreen(screen) != null
                 ) {
                     goBack()
+                }
+
+                LaunchedEffect(screen) {
+                    if (screen == SafeClipScreen.Home) {
+                        loadAskItems()
+                    }
+                    if (screen !is SafeClipScreen.SubmissionForm) {
+                        retryUploadSubmissionId = null
+                        nasUploadFailureMessage = null
+                    }
                 }
 
                 val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -575,6 +637,60 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                if (showReportWarningDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showReportWarningDialog = false },
+                        title = {
+                            Text(
+                                text = "교통법규 위반 신고 안내",
+                                fontSize = 20.sp
+                            )
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "출처 : 안전신문고\n\n" +
+                                        "안전신문고로 접수되는 교통법규 위반 신고의 경우 증거주의 원칙에 따라 " +
+                                        "신고인이 제출한 증거자료(동영상, 사진)에 의해 피신고자의 위반이 명백해야 처분이 이루어질 수 있으며,\n\n" +
+                                        "교통법규 위반 신고는 위반일로부터 2일이 경과한 후에 신고된 경우 " +
+                                        "위반이 확인되더라도 경고·계도 처리됨을 알려드립니다.\n\n" +
+                                        "※ 제보 마지막 날(이틀째 되는 날)이 주말·공휴일에 해당하는 경우 다음날 평일까지 제보 가능",
+                                    fontSize = 16.sp,
+                                    lineHeight = 23.sp
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = hideReportWarningAgain,
+                                        onCheckedChange = { hideReportWarningAgain = it }
+                                    )
+                                    Text(
+                                        text = "다시 표시 안함",
+                                        fontSize = 16.sp,
+                                        lineHeight = 20.sp
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    if (hideReportWarningAgain) {
+                                        reportWarningPreferences.edit()
+                                            .putBoolean(REPORT_WARNING_DISMISSED_KEY, true)
+                                            .apply()
+                                    }
+                                    showReportWarningDialog = false
+                                }
+                            ) {
+                                Text("확인")
+                            }
+                        }
+                    )
+                }
+
                 when (val currentScreen = screen) {
                     SafeClipScreen.Boot -> BootLoadingScreen()
 
@@ -618,6 +734,7 @@ class MainActivity : ComponentActivity() {
                         folderPermissionGranted = hasFolderPermission(),
                         cameraPermissionGranted = hasCameraPermission,
                         submissionCount = submissionRecords.size,
+                        askAnswerCount = askItems.count { it.answer.isNotBlank() },
                         onLoadVideos = { folderPicker.launch(null) },
                         onRequestCameraPermission = {
                             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -648,7 +765,10 @@ class MainActivity : ComponentActivity() {
                         },
                         onOpenSettings = {
                             screen = SafeClipScreen.Settings
-                            loadCurrentUserProfileAsync()
+                            scope.launch {
+                                loadCurrentUserProfile()
+                                loadAskItems()
+                            }
                         },
                         onBack = ::goBack
                     )
@@ -664,6 +784,12 @@ class MainActivity : ComponentActivity() {
                             authMessage = firebaseAuthConnector.signOut()
                             syncedUserProfile = null
                             refreshSubmissionRecordsAsync()
+                        },
+                        onOpenAsk = {
+                            scope.launch {
+                                loadAskItems()
+                                screen = SafeClipScreen.Ask
+                            }
                         },
                         onDeleteAccount = {
                             scope.launch {
@@ -746,10 +872,50 @@ class MainActivity : ComponentActivity() {
                                     initialAttachment = attachment ?: SubmissionAttachment.fromVideoCandidate(video),
                                     availableFiles = sourceFiles.selectedFolderFiles,
                                     availableFolderPath = FolderManagerText.title(currentScreen.kind),
-                                    eventFiles = sourceFiles.eventFolderFiles
+                                    eventFiles = sourceFiles.eventFolderFiles,
+                                    returnScreen = currentScreen
                                 )
                             } else {
                                 folderManagerMessage = "영상 또는 JPG 파일만 제출할 수 있습니다."
+                            }
+                        }
+                    )
+
+                    SafeClipScreen.Ask -> AskScreen(
+                        askId = currentAskId(),
+                        askItems = askItems,
+                        isLoading = askLoading,
+                        message = authMessage,
+                        onBack = ::goBack,
+                        onRefresh = {
+                            loadAskItemsAsync()
+                        },
+                        onDelete = { item ->
+                            scope.launch {
+                                authMessage = when (val result = askRepository.delete(item.documentId)) {
+                                    is AskDeleteResult.Success -> {
+                                        loadAskItems()
+                                        result.message
+                                    }
+                                    is AskDeleteResult.Failed -> result.message
+                                }
+                            }
+                        },
+                        onSubmit = { questionType, question ->
+                            scope.launch {
+                                authMessage = when (
+                                    val result = askRepository.add(
+                                        id = currentAskId(),
+                                        questionType = questionType,
+                                        question = question
+                                    )
+                                ) {
+                                    is AskSaveResult.Success -> {
+                                        loadAskItems()
+                                        result.message
+                                    }
+                                    is AskSaveResult.Failed -> result.message
+                                }
                             }
                         }
                     )
@@ -799,7 +965,8 @@ class MainActivity : ComponentActivity() {
                                     initialAttachment = attachment ?: SubmissionAttachment.fromVideoCandidate(video),
                                     availableFiles = sourceFiles.selectedFolderFiles,
                                     availableFolderPath = folderPath,
-                                    eventFiles = sourceFiles.eventFolderFiles
+                                    eventFiles = sourceFiles.eventFolderFiles,
+                                    returnScreen = currentScreen
                                 )
                             }
                         },
@@ -831,7 +998,8 @@ class MainActivity : ComponentActivity() {
                                 initialAttachment = SubmissionAttachment.fromVideoCandidate(selected),
                                 availableFiles = sourceFiles.selectedFolderFiles,
                                 availableFolderPath = selected.folderPath,
-                                eventFiles = sourceFiles.eventFolderFiles
+                                eventFiles = sourceFiles.eventFolderFiles,
+                                returnScreen = currentScreen
                             )
                         }
                     )
@@ -847,6 +1015,8 @@ class MainActivity : ComponentActivity() {
                         availableFiles = currentScreen.availableFiles,
                         availableFolderPath = currentScreen.availableFolderPath,
                         eventFiles = currentScreen.eventFiles,
+                        uploadProgress = nasUploadProgress,
+                        uploadFailureMessage = nasUploadFailureMessage,
                         onLoadRepresentativeMetadata = { attachment ->
                             submissionMetadataReader.read(attachment)
                         },
@@ -868,20 +1038,50 @@ class MainActivity : ComponentActivity() {
                                 ).show()
 
                                 val ownerUid = firebaseAuthConnector.currentUserUid()
-                                val submissionId = "safeclip-${System.currentTimeMillis()}"
+                                val submissionId = retryUploadSubmissionId ?: "safeclip-${System.currentTimeMillis()}".also {
+                                    retryUploadSubmissionId = it
+                                }
+                                nasUploadFailureMessage = null
+                                val submitterLabel = submissionSubmitterLabel(
+                                    displayName = syncedUserProfile?.displayName,
+                                    email = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
+                                    guestId = if (ownerUid == null) guestId else syncedUserProfile?.guestId
+                                )
+                                val uploadStartedAtMillis = System.currentTimeMillis()
+                                nasUploadProgress = NasSubmissionUploadProgress(
+                                    fileIndex = 1,
+                                    totalFiles = attachments.size,
+                                    fileName = attachments.firstOrNull()?.displayName ?: "첨부 파일",
+                                    bytesSent = 0L,
+                                    totalBytes = attachments.firstOrNull()?.sizeBytes,
+                                    startedAtMillis = uploadStartedAtMillis,
+                                    nowMillis = uploadStartedAtMillis
+                                )
                                 val uploadedAttachments = try {
                                     nasUploadClient.uploadAll(
                                         submissionId = submissionId,
-                                        attachments = attachments
+                                        submitterLabel = submitterLabel,
+                                        attachments = attachments,
+                                        onProgress = { progress ->
+                                            withContext(Dispatchers.Main) {
+                                                nasUploadProgress = progress.copy(
+                                                    startedAtMillis = uploadStartedAtMillis,
+                                                    nowMillis = System.currentTimeMillis()
+                                                )
+                                            }
+                                        }
                                     )
                                 } catch (exception: Exception) {
+                                    nasUploadProgress = null
+                                    nasUploadFailureMessage = exception.localizedMessage ?: "NAS 업로드에 실패했습니다."
                                     Toast.makeText(
                                         this@MainActivity,
-                                        exception.localizedMessage ?: "NAS 업로드에 실패했습니다.",
+                                        "${nasUploadFailureMessage} 다시 제출하기를 누르면 재시도합니다.",
                                         Toast.LENGTH_LONG
                                     ).show()
                                     return@launch
                                 }
+                                nasUploadProgress = null
                                 val uploadedRepresentative = uploadedAttachments.firstOrNull {
                                     it.uriString == representativeAttachment.uriString
                                 } ?: representativeAttachment
@@ -891,24 +1091,29 @@ class MainActivity : ComponentActivity() {
                                     draft = draft,
                                     guestId = if (ownerUid == null) guestId else syncedUserProfile?.guestId,
                                     ownerDisplayName = syncedUserProfile?.displayName,
-                                    ownerEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
+                                    nasSubmissionFolder = uploadedAttachments.firstOrNull()?.nasSubmissionFolder,
+                                    submissionSequence = uploadedAttachments.firstOrNull()?.submissionSequence,
+                                    submissionSequenceText = uploadedAttachments.firstOrNull()?.submissionSequenceText,
                                     attachments = uploadedAttachments
                                 )
                                 when (val result = submissionRepository.add(input)) {
                                     is SubmissionSaveResult.Success -> {
+                                        retryUploadSubmissionId = null
+                                        nasUploadFailureMessage = null
                                         Toast.makeText(
                                             this@MainActivity,
                                             result.message,
                                             Toast.LENGTH_SHORT
                                         ).show()
                                         refreshSubmissionRecordsAsync()
-                                        screen = SafeClipScreen.SubmissionStatus
+                                        screen = SafeClipScreen.Home
                                     }
 
                                     is SubmissionSaveResult.Failed -> {
+                                        nasUploadFailureMessage = result.message
                                         Toast.makeText(
                                             this@MainActivity,
-                                            result.message,
+                                            "${result.message} 다시 제출하기를 누르면 저장을 재시도합니다.",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -930,6 +1135,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun submissionSubmitterLabel(
+        displayName: String?,
+        email: String?,
+        guestId: String?
+    ): String {
+        return listOf(
+            displayName,
+            email?.substringBefore("@"),
+            guestId,
+            "guest"
+        ).first { !it.isNullOrBlank() }.orEmpty()
+    }
+
     private fun hasPermission(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
     }
@@ -937,5 +1155,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val BOOT_MIN_VISIBLE_MS = 650L
         private const val BOOT_MAX_DURATION_MS = 1_500L
+        private const val REPORT_WARNING_PREFERENCES = "safeclip_report_warning"
+        private const val REPORT_WARNING_DISMISSED_KEY = "report_warning_dismissed"
     }
 }

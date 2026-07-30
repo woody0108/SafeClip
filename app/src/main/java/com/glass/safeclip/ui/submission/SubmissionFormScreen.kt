@@ -21,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -49,6 +51,7 @@ import com.glass.safeclip.data.submission.SubmissionAttachmentKind
 import com.glass.safeclip.data.submission.SubmissionAttachmentRules
 import com.glass.safeclip.data.submission.SubmissionFileMetadata
 import com.glass.safeclip.data.submission.SubmissionMetadataAutofill
+import com.glass.safeclip.data.submission.NasSubmissionUploadProgress
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
@@ -67,11 +70,15 @@ fun SubmissionFormScreen(
     availableFiles: List<ManagedFolderFile>,
     availableFolderPath: String,
     eventFiles: List<ManagedFolderFile>,
+    uploadProgress: NasSubmissionUploadProgress?,
+    uploadFailureMessage: String?,
     onLoadRepresentativeMetadata: suspend (SubmissionAttachment) -> SubmissionFileMetadata?,
     onBack: () -> Unit,
     onSubmit: (SubmissionDraft, SubmissionAttachment, List<SubmissionAttachment>) -> Unit
 ) {
     var draft by remember { mutableStateOf(SubmissionDraft()) }
+    var step by remember { mutableStateOf(SubmissionStep.Files) }
+    var showConsentDialog by remember { mutableStateOf(false) }
     var incidentDateTimeFields by remember {
         mutableStateOf(SubmissionIncidentDateTimeFields.fromCombined(draft.incidentDateTime))
     }
@@ -137,192 +144,302 @@ fun SubmissionFormScreen(
         ) {
             SafeClipTopBar(
                 title = "제출하기",
-                subtitle = "사고 정보와 동의 항목을 확인해주세요",
+                subtitle = if (step == SubmissionStep.Files) "제출할 파일을 확인해주세요" else "사고 정보를 입력해주세요",
                 trailing = {
-                    SecondaryActionButton(text = "뒤로", onClick = onBack)
-                }
-            )
-
-            GlassPanel(modifier = Modifier.fillMaxWidth()) {
-                Text("첨부 파일", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(
-                    text = clip?.let { "제출용 클립: ${it.savedDisplayPath}" } ?: "제출용 클립 없음: 원본 영상으로 제출 준비",
-                    color = MaterialTheme.colorScheme.secondary,
-                    fontSize = 12.sp
-                )
-                Text(
-                    text = "영상 $videoCount/${SubmissionAttachmentRules.MaxVideos}개, 사진 $photoCount/${SubmissionAttachmentRules.MaxPhotos}개",
-                    color = MaterialTheme.colorScheme.secondary,
-                    fontSize = 12.sp
-                )
-                attachments.forEach { attachment ->
-                    AttachmentRow(
-                        attachment = attachment,
-                        representative = attachment.uriString == representativeAttachment.uriString,
-                        onMakeRepresentative = {
-                            representativeAttachment = attachment
-                            previewSelection = previewSelection.select(attachment)
-                            attachmentMessage = "대표 파일을 변경했습니다."
-                        },
-                        onPreview = {
-                            previewSelection = previewSelection.select(attachment)
-                        },
-                        onRemove = {
-                            if (attachment.uriString != representativeAttachment.uriString) {
-                                attachments = attachments.filterNot { it.uriString == attachment.uriString }
-                                attachmentMessage = "첨부에서 제외했습니다."
+                    SecondaryActionButton(
+                        text = "뒤로",
+                        onClick = {
+                            if (step == SubmissionStep.Details) {
+                                step = SubmissionStep.Files
                             } else {
-                                attachmentMessage = "대표 파일은 먼저 다른 파일로 변경한 뒤 해제할 수 있습니다."
+                                onBack()
                             }
                         }
                     )
                 }
-                attachmentMessage?.let {
-                    Text(text = it, color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp)
+            )
+
+            uploadProgress?.let {
+                UploadProgressDialog(progress = it)
+            }
+            uploadFailureMessage?.takeIf { it.isNotBlank() }?.let {
+                GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "제출이 중단되었습니다.",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 21.sp
+                    )
+                    Text(
+                        text = "내용은 유지되어 있습니다. 제출하기를 다시 누르면 같은 제출 묶음으로 재시도합니다.",
+                        color = MaterialTheme.colorScheme.secondary,
+                        lineHeight = 21.sp
+                    )
                 }
             }
 
-            GlassPanel(modifier = Modifier.fillMaxWidth()) {
-                CollapsiblePanelHeader(
-                    title = "추가 가능한 파일",
-                    state = candidatePanelState,
-                    onToggle = { candidatePanelState = candidatePanelState.toggle() }
-                )
-                if (candidatePanelState.showContent) {
+            if (step == SubmissionStep.Files) {
+                GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                    Text("첨부 파일", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(
-                        text = "영상은 500MB 미만 2개까지, JPG 사진은 50MB 미만 5개까지 선택할 수 있습니다.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = clip?.let { "제출용 클립: ${it.savedDisplayPath}" } ?: "제출용 클립 없음: 원본 영상으로 제출 준비",
+                        color = MaterialTheme.colorScheme.secondary,
                         fontSize = 12.sp
                     )
-                    AttachmentSourceTabs(
-                        selected = selectedSource,
-                        onSelected = {
-                            selectedSource = it
-                            showAllCandidates = false
-                        }
+                    Text(
+                        text = "영상 $videoCount/${SubmissionAttachmentRules.MaxVideos}개, 사진 $photoCount/${SubmissionAttachmentRules.MaxPhotos}개",
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontSize = 12.sp
                     )
-                    AttachmentFilterTabs(
-                        selected = selectedFilter,
-                        onSelected = {
-                            selectedFilter = it
-                            showAllCandidates = false
-                        }
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = if (showAllCandidates) 360.dp else 250.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        visibleCandidateAttachments.forEach { candidate ->
-                            AttachmentRow(
-                                attachment = candidate,
-                                representative = false,
-                                onMakeRepresentative = null,
-                                onRemove = null,
-                                extraActionText = "추가",
-                                onPreview = {
-                                    previewSelection = previewSelection.selectCandidate(candidate)
-                                },
-                                onExtraAction = {
-                                    when (val result = SubmissionAttachmentRules.add(attachments, candidate)) {
-                                        is AttachmentSelectionResult.Accepted -> {
-                                            attachments = result.attachments
-                                            attachmentMessage = "첨부 파일을 추가했습니다."
-                                        }
-                                        is AttachmentSelectionResult.Rejected -> {
-                                            attachmentMessage = result.message
-                                        }
-                                    }
+                    attachments.forEach { attachment ->
+                        AttachmentRow(
+                            attachment = attachment,
+                            representative = attachment.uriString == representativeAttachment.uriString,
+                            onMakeRepresentative = {
+                                representativeAttachment = attachment
+                                previewSelection = previewSelection.select(attachment)
+                                attachmentMessage = "대표 파일을 변경했습니다."
+                            },
+                            onPreview = {
+                                previewSelection = previewSelection.select(attachment)
+                            },
+                            onRemove = {
+                                if (attachment.uriString != representativeAttachment.uriString) {
+                                    attachments = attachments.filterNot { it.uriString == attachment.uriString }
+                                    attachmentMessage = "첨부에서 제외했습니다."
+                                } else {
+                                    attachmentMessage = "대표 파일은 먼저 다른 파일로 변경한 뒤 해제할 수 있습니다."
                                 }
-                            )
-                        }
+                            }
+                        )
                     }
-                    if (candidateAttachments.isEmpty()) {
+                    attachmentMessage?.let {
+                        Text(text = it, color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp)
+                    }
+                }
+
+                GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                    CollapsiblePanelHeader(
+                        title = "추가 가능한 파일",
+                        state = candidatePanelState,
+                        onToggle = { candidatePanelState = candidatePanelState.toggle() }
+                    )
+                    if (candidatePanelState.showContent) {
                         Text(
-                            text = "추가할 수 있는 영상/JPG 파일이 없습니다.",
+                            text = "영상은 500MB 미만 2개까지, JPG 사진은 50MB 미만 5개까지 선택할 수 있습니다.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp
                         )
-                    } else if (candidateAttachments.size > SubmissionAttachmentCandidateDisplay.PreviewLimit) {
+                        AttachmentSourceTabs(
+                            selected = selectedSource,
+                            onSelected = {
+                                selectedSource = it
+                                showAllCandidates = false
+                            }
+                        )
+                        AttachmentFilterTabs(
+                            selected = selectedFilter,
+                            onSelected = {
+                                selectedFilter = it
+                                showAllCandidates = false
+                            }
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = if (showAllCandidates) 360.dp else 250.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            visibleCandidateAttachments.forEach { candidate ->
+                                AttachmentRow(
+                                    attachment = candidate,
+                                    representative = false,
+                                    onMakeRepresentative = null,
+                                    onRemove = null,
+                                    extraActionText = "추가",
+                                    onPreview = {
+                                        previewSelection = previewSelection.selectCandidate(candidate)
+                                    },
+                                    onExtraAction = {
+                                        when (val result = SubmissionAttachmentRules.add(attachments, candidate)) {
+                                            is AttachmentSelectionResult.Accepted -> {
+                                                attachments = result.attachments
+                                                attachmentMessage = "첨부 파일을 추가했습니다."
+                                            }
+                                            is AttachmentSelectionResult.Rejected -> {
+                                                attachmentMessage = result.message
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        if (candidateAttachments.isEmpty()) {
+                            Text(
+                                text = "추가할 수 있는 영상/JPG 파일이 없습니다.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        } else if (candidateAttachments.size > SubmissionAttachmentCandidateDisplay.PreviewLimit) {
+                            SecondaryActionButton(
+                                text = if (showAllCandidates) "접기" else "전체보기 (${candidateAttachments.size}개)",
+                                onClick = { showAllCandidates = !showAllCandidates },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                AttachmentPreviewPanel(
+                    selection = previewSelection,
+                    state = previewPanelState,
+                    onToggle = { previewPanelState = previewPanelState.toggle() }
+                )
+
+                PrimaryActionButton(
+                    text = "제출하기",
+                    enabled = SubmissionStep.Files.canContinue(draft, attachments) && uploadProgress == null,
+                    onClick = { step = SubmissionStep.Details }
+                )
+            } else {
+                GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                    IncidentDateTimeInputs(
+                        fields = incidentDateTimeFields,
+                        onFieldsChange = { fields ->
+                            dateTimeAutofilled = false
+                            incidentDateTimeFields = fields
+                            draft = draft.copy(incidentDateTime = fields.combined())
+                        }
+                    )
+                    OutlinedTextField(
+                        value = draft.locationText,
+                        onValueChange = {
+                            locationAutofilled = false
+                            draft = draft.copy(locationText = it)
+                        },
+                        label = { Text("위치") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.incidentType,
+                        onValueChange = { draft = draft.copy(incidentType = it) },
+                        label = { Text("신고 유형") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.memo,
+                        onValueChange = { draft = draft.copy(memo = it) },
+                        label = { Text("메모") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+
+                PrimaryActionButton(
+                    text = "제출하기",
+                    enabled = SubmissionStep.Details.canContinue(draft, attachments) && uploadProgress == null,
+                    onClick = { showConsentDialog = true }
+                )
+            }
+
+            if (showConsentDialog) {
+                AlertDialog(
+                    onDismissRequest = { showConsentDialog = false },
+                    title = { Text("제출 동의") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ConsentRow(
+                                text = "회사 검토에 동의합니다.",
+                                checked = draft.reviewConsent,
+                                onCheckedChange = { draft = draft.copy(reviewConsent = it) }
+                            )
+                            ConsentRow(
+                                text = "영상 보관에 동의합니다.",
+                                checked = draft.storageConsent,
+                                onCheckedChange = { draft = draft.copy(storageConsent = it) }
+                            )
+                            ConsentRow(
+                                text = "교통 위험 데이터 활용에 동의합니다.",
+                                checked = draft.dataUseConsent,
+                                onCheckedChange = { draft = draft.copy(dataUseConsent = it) }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        PrimaryActionButton(
+                            text = "제출하기",
+                            enabled = draft.canSubmitWith(attachments) && uploadProgress == null,
+                            onClick = {
+                                showConsentDialog = false
+                                val orderedAttachments = listOf(representativeAttachment) +
+                                    attachments.filterNot { it.uriString == representativeAttachment.uriString }
+                                onSubmit(draft, representativeAttachment, orderedAttachments)
+                            }
+                        )
+                    },
+                    dismissButton = {
                         SecondaryActionButton(
-                            text = if (showAllCandidates) "접기" else "전체보기 (${candidateAttachments.size}개)",
-                            onClick = { showAllCandidates = !showAllCandidates },
-                            modifier = Modifier.fillMaxWidth()
+                            text = "취소",
+                            onClick = { showConsentDialog = false }
                         )
                     }
-                }
-            }
-
-            AttachmentPreviewPanel(
-                selection = previewSelection,
-                state = previewPanelState,
-                onToggle = { previewPanelState = previewPanelState.toggle() }
-            )
-
-            GlassPanel(modifier = Modifier.fillMaxWidth()) {
-                IncidentDateTimeInputs(
-                    fields = incidentDateTimeFields,
-                    onFieldsChange = { fields ->
-                        dateTimeAutofilled = false
-                        incidentDateTimeFields = fields
-                        draft = draft.copy(incidentDateTime = fields.combined())
-                    }
-                )
-                OutlinedTextField(
-                    value = draft.locationText,
-                    onValueChange = {
-                        locationAutofilled = false
-                        draft = draft.copy(locationText = it)
-                    },
-                    label = { Text("위치") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = draft.incidentType,
-                    onValueChange = { draft = draft.copy(incidentType = it) },
-                    label = { Text("사고 유형") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = draft.memo,
-                    onValueChange = { draft = draft.copy(memo = it) },
-                    label = { Text("메모") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
                 )
             }
-
-            GlassPanel(modifier = Modifier.fillMaxWidth()) {
-                ConsentRow(
-                    text = "회사 검토에 동의합니다.",
-                    checked = draft.reviewConsent,
-                    onCheckedChange = { draft = draft.copy(reviewConsent = it) }
-                )
-                ConsentRow(
-                    text = "영상 보관에 동의합니다.",
-                    checked = draft.storageConsent,
-                    onCheckedChange = { draft = draft.copy(storageConsent = it) }
-                )
-                ConsentRow(
-                    text = "교통 위험 데이터 활용에 동의합니다.",
-                    checked = draft.dataUseConsent,
-                    onCheckedChange = { draft = draft.copy(dataUseConsent = it) }
-                )
-            }
-
-            PrimaryActionButton(
-                text = "제출하기",
-                enabled = draft.canSubmitWith(attachments),
-                onClick = {
-                    val orderedAttachments = listOf(representativeAttachment) +
-                        attachments.filterNot { it.uriString == representativeAttachment.uriString }
-                    onSubmit(draft, representativeAttachment, orderedAttachments)
-                }
-            )
         }
     }
+}
+
+@Composable
+private fun UploadProgressDialog(
+    progress: NasSubmissionUploadProgress
+) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("제출 중") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = progress.fileLabel,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+                progress.progressFraction?.let { fraction ->
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = SafeClipCyan
+                    )
+                    Text(
+                        text = "${progress.currentFilePercent}% · ${progress.remainingTimeText}",
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontSize = 12.sp
+                    )
+                } ?: run {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = SafeClipCyan
+                    )
+                    Text(
+                        text = progress.remainingTimeText,
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Text(
+                text = "업로드가 끝날 때까지 기다려주세요.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+    )
 }
 
 private enum class SubmissionAttachmentSource(val label: String) {

@@ -43,6 +43,7 @@ fun MainHomeScreen(
     folderPermissionGranted: Boolean,
     cameraPermissionGranted: Boolean,
     submissionCount: Int,
+    askAnswerCount: Int,
     onLoadVideos: () -> Unit,
     onRequestCameraPermission: () -> Unit,
     onOpenRecentEvents: () -> Unit,
@@ -143,7 +144,12 @@ fun MainHomeScreen(
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HomeShortcut("제출 내역", statusSummary.submissionCountText, Modifier.weight(1f), onClick = onOpenStatus)
-                HomeShortcut("설정", "환경 관리", Modifier.weight(1f), onClick = onOpenSettings)
+                HomeShortcut(
+                    title = "설정",
+                    subtitle = if (askAnswerCount > 0) "문의 답변 ${askAnswerCount}개" else "환경 관리",
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenSettings
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

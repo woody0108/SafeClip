@@ -37,6 +37,7 @@ fun SettingsScreen(
     message: String?,
     onBack: () -> Unit,
     onSignOut: () -> Unit,
+    onOpenAsk: () -> Unit,
     onDeleteAccount: () -> Unit
 ) {
     val accountText = SettingsAccountText.from(
@@ -124,6 +125,24 @@ fun SettingsScreen(
                     text = accountActions.signOutText,
                     onClick = onSignOut,
                     enabled = accountActions.signOutEnabled
+                )
+            }
+
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "일반 문의",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+                Text(
+                    text = "앱 사용 중 궁금한 점이나 요청하고 싶은 내용을 남겨주세요.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 21.sp
+                )
+                SecondaryActionButton(
+                    text = "문의 화면 열기",
+                    onClick = onOpenAsk,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 

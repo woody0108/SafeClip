@@ -9,6 +9,8 @@ data class SubmissionInput(
     val draft: SubmissionDraft,
     val guestId: String? = null,
     val ownerDisplayName: String? = null,
-    val ownerEmail: String? = null,
+    val nasSubmissionFolder: String? = null,
+    val submissionSequence: Int? = null,
+    val submissionSequenceText: String? = null,
     val attachments: List<SubmissionAttachment> = listOf(SubmissionAttachment.fromVideoCandidate(video))
 )

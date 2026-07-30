@@ -55,9 +55,9 @@ fun SubmissionStatusScreen(
             MetricStrip(
                 metrics = listOf(
                     "제출" to records.size.toString(),
-                    "검토중" to records.count { it.status == SubmissionStatus.Reviewing || it.status == SubmissionStatus.WaitingReview }.toString(),
-                    "자료생성" to records.count { it.status == SubmissionStatus.ReportPackageReady }.toString(),
-                    "결과회신" to records.count { it.status == SubmissionStatus.Completed }.toString()
+                    "검토 대기" to records.count { it.status == SubmissionStatus.WaitingReview }.toString(),
+                    "검토 완료" to records.count { it.status == SubmissionStatus.ReviewCompleted }.toString(),
+                    "신고 완료" to records.count { it.status == SubmissionStatus.ReportCompleted || it.status == SubmissionStatus.ReportResult }.toString()
                 )
             )
 
@@ -136,7 +136,7 @@ private fun SubmissionRecordRow(
             fontSize = 12.sp
         )
         Text(
-            text = record.video.displayName,
+            text = "${record.video.displayName} · 파일 ${record.attachmentCount}개",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp
         )
@@ -177,13 +177,11 @@ private fun SubmissionDetailPanel(
 
 private fun toneForStatus(status: SubmissionStatus): StatusTone {
     return when (status) {
-        SubmissionStatus.Uploading,
-        SubmissionStatus.WaitingReview,
-        SubmissionStatus.Reviewing -> StatusTone.Warning
-        SubmissionStatus.NeedsMoreInfo,
-        SubmissionStatus.Rejected -> StatusTone.Error
-        SubmissionStatus.ReportPackageReady,
-        SubmissionStatus.Completed -> StatusTone.Success
+        SubmissionStatus.WaitingReview -> StatusTone.Warning
+        SubmissionStatus.SupplementRequested -> StatusTone.Error
+        SubmissionStatus.ReviewCompleted,
+        SubmissionStatus.ReportCompleted,
+        SubmissionStatus.ReportResult -> StatusTone.Success
     }
 }
 

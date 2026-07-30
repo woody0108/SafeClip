@@ -3,7 +3,10 @@ package com.glass.safeclip.data.submission
 data class NasSubmissionUploadResponse(
     val storedName: String,
     val relativePath: String,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val submissionFolder: String? = null,
+    val submissionSequence: Int? = null,
+    val submissionSequenceText: String? = null
 ) {
     companion object {
         fun parse(json: String): NasSubmissionUploadResponse {
@@ -15,7 +18,10 @@ data class NasSubmissionUploadResponse(
             return NasSubmissionUploadResponse(
                 storedName = stringValue(json, "stored_name") ?: throw IllegalStateException("NAS 응답에 stored_name이 없습니다."),
                 relativePath = stringValue(json, "relative_path") ?: throw IllegalStateException("NAS 응답에 relative_path가 없습니다."),
-                sizeBytes = numberValue(json, "size_bytes") ?: 0L
+                sizeBytes = numberValue(json, "size_bytes") ?: 0L,
+                submissionFolder = stringValue(json, "submission_folder"),
+                submissionSequence = numberValue(json, "submission_sequence")?.toInt(),
+                submissionSequenceText = stringValue(json, "submission_sequence_text")
             )
         }
 

@@ -28,6 +28,15 @@ class SubmissionDraftTest {
     }
 
     @Test
+    fun draftIncidentInfoCanBeCompleteBeforeConsent() {
+        val draft = readyDraft()
+            .copy(reviewConsent = false, storageConsent = false, dataUseConsent = false)
+
+        assertTrue(draft.hasRequiredIncidentInfo)
+        assertFalse(draft.isReadyToSubmit)
+    }
+
+    @Test
     fun submissionRequiresAtLeastOneAttachment() {
         val draft = readyDraft()
 
@@ -39,6 +48,17 @@ class SubmissionDraftTest {
         val draft = readyDraft()
 
         assertTrue(draft.canSubmitWith(listOf(attachment())))
+    }
+
+    @Test
+    fun submissionRejectsOversizedInitialVideoAttachment() {
+        val draft = readyDraft()
+
+        assertFalse(
+            draft.canSubmitWith(
+                listOf(attachment(sizeBytes = 501L * 1024L * 1024L))
+            )
+        )
     }
 
     @Test
@@ -62,12 +82,12 @@ class SubmissionDraftTest {
         )
     }
 
-    private fun attachment(): SubmissionAttachment {
+    private fun attachment(sizeBytes: Long = 100L): SubmissionAttachment {
         return SubmissionAttachment(
             uriString = "content://video",
             displayName = "event.mp4",
             mimeType = "video/mp4",
-            sizeBytes = 100L,
+            sizeBytes = sizeBytes,
             folderPath = "현재 폴더",
             kind = SubmissionAttachmentKind.Video
         )

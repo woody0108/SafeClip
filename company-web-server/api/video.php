@@ -27,7 +27,9 @@ if (str_starts_with($id, $samplePrefix)) {
 
 $document = firestore_request($config, 'GET', '/submissions/' . rawurlencode($id));
 $fields = firestore_fields($document);
-$relativePath = find_video_path($config, $fields);
+$fileIndex = max(0, (int)($_GET['file'] ?? 0));
+$attachments = submission_attachments($config, $fields);
+$relativePath = clean_relative_path((string)($attachments[$fileIndex]['nasRelativePath'] ?? ''));
 if ($relativePath === '') {
     json_fail(404, 'Video file was not found on NAS.');
 }

@@ -60,32 +60,76 @@ function sample_video_path(array $config, string $fileName): string
 
 function find_video_path(array $config, array $fields): string
 {
-    $nasFiles = is_array($fields['nasFiles'] ?? null) ? $fields['nasFiles'] : [];
-    $attachments = is_array($fields['attachments'] ?? null) ? $fields['attachments'] : [];
-    $candidates = [
-        (string)($nasFiles['front'] ?? ''),
-        (string)($nasFiles['rear'] ?? ''),
-        (string)($nasFiles['file1'] ?? ''),
-        (string)($fields['frontVideoPath'] ?? ''),
-        (string)($fields['rearVideoPath'] ?? ''),
-        (string)($fields['nasRelativePath'] ?? ''),
-    ];
-    foreach ($attachments as $attachment) {
-        if (is_array($attachment)) {
-            $candidates[] = (string)($attachment['nasRelativePath'] ?? '');
-            $candidates[] = (string)($attachment['displayName'] ?? '');
-        }
-    }
-    $candidates[] = (string)($fields['originalFileName'] ?? '');
-
-    foreach ($candidates as $candidate) {
-        $path = clean_relative_path($candidate);
-        if ($path !== '' && resolve_video_file_path($config, $path) !== '') {
-            return $path;
+    foreach (submission_attachments($config, $fields) as $attachment) {
+        if (($attachment['exists'] ?? false) === true) {
+            return (string)$attachment['nasRelativePath'];
         }
     }
 
     return '';
+}
+
+function submission_attachments(array $config, array $fields): array
+{
+    $attachments = is_array($fields['attachments'] ?? null) ? $fields['attachments'] : [];
+    $normalized = [];
+
+    foreach ($attachments as $index => $attachment) {
+        if (!is_array($attachment)) {
+            continue;
+        }
+        $relativePath = clean_relative_path((string)($attachment['nasRelativePath'] ?? ''));
+        $displayName = trim((string)($attachment['displayName'] ?? basename($relativePath)));
+        $kind = attachment_kind($attachment, $relativePath);
+        $resolved = $relativePath === '' ? '' : resolve_video_file_path($config, $relativePath);
+
+        $normalized[] = [
+            'index' => count($normalized),
+            'displayName' => $displayName !== '' ? $displayName : '첨부 파일',
+            'kind' => $kind,
+            'mimeType' => (string)($attachment['mimeType'] ?? mime_for_path($relativePath)),
+            'sizeBytes' => isset($attachment['sizeBytes']) ? (int)$attachment['sizeBytes'] : null,
+            'uploadedSizeBytes' => isset($attachment['uploadedSizeBytes']) ? (int)$attachment['uploadedSizeBytes'] : null,
+            'nasRelativePath' => $relativePath,
+            'exists' => $resolved !== '',
+        ];
+    }
+
+    if ($normalized !== []) {
+        return $normalized;
+    }
+
+    $legacyPath = clean_relative_path((string)($fields['nasRelativePath'] ?? ''));
+    if ($legacyPath !== '') {
+        $resolved = resolve_video_file_path($config, $legacyPath);
+        return [[
+            'index' => 0,
+            'displayName' => (string)($fields['originalFileName'] ?? basename($legacyPath)),
+            'kind' => is_image_extension($legacyPath) ? 'photo' : 'video',
+            'mimeType' => mime_for_path($legacyPath),
+            'sizeBytes' => isset($fields['fileSizeBytes']) ? (int)$fields['fileSizeBytes'] : null,
+            'uploadedSizeBytes' => null,
+            'nasRelativePath' => $legacyPath,
+            'exists' => $resolved !== '',
+        ]];
+    }
+
+    return [];
+}
+
+function attachment_kind(array $attachment, string $relativePath): string
+{
+    $kind = (string)($attachment['kind'] ?? '');
+    if ($kind === 'photo' || $kind === 'video') {
+        return $kind;
+    }
+
+    return is_image_extension($relativePath) ? 'photo' : 'video';
+}
+
+function mime_for_path(string $path): string
+{
+    return is_image_extension($path) ? 'image/jpeg' : 'video/mp4';
 }
 
 function resolve_video_file_path(array $config, string $relativePath): string

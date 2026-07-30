@@ -30,7 +30,7 @@ $payload = firestore_request($config, 'POST', ':runQuery', [
     'structuredQuery' => [
         'from' => [['collectionId' => 'submissions']],
         'orderBy' => [[
-            'field' => ['fieldPath' => 'createdAt'],
+            'field' => ['fieldPath' => 'submittedAt'],
             'direction' => 'DESCENDING',
         ]],
         'limit' => $limit,
@@ -46,26 +46,30 @@ foreach ($payload as $row) {
     $document = $row['document'];
     $fields = firestore_fields($document);
     $id = document_id_from_name((string)($document['name'] ?? ''));
-    $videoPath = find_video_path($config, $fields);
+    $attachments = submission_attachments($config, $fields);
+    $firstAttachment = $attachments[0] ?? null;
 
     $submissions[] = [
         'id' => $id,
-        'status' => $fields['status'] ?? 'waiting_review',
+        'status' => normalize_status((string)($fields['status'] ?? '')),
         'ownerUid' => $fields['ownerUid'] ?? '',
         'guestId' => $fields['guestId'] ?? '',
         'ownerDisplayName' => $fields['ownerDisplayName'] ?? '',
-        'ownerEmail' => $fields['ownerEmail'] ?? '',
         'submitterLabel' => submitter_label($fields),
-        'originalFileName' => $fields['originalFileName'] ?? '',
-        'fileSizeBytes' => $fields['fileSizeBytes'] ?? null,
-        'incidentDateTime' => $fields['incidentDateTime'] ?? '',
-        'incidentLocationText' => $fields['incidentLocationText'] ?? '',
-        'violationTypeCandidate' => $fields['violationTypeCandidate'] ?? '',
-        'userMemo' => $fields['userMemo'] ?? '',
-        'createdAtText' => format_firestore_time((string)($fields['createdAt'] ?? '')),
+        'incidentDate' => $fields['incidentDate'] ?? '',
+        'incidentTime' => $fields['incidentTime'] ?? '',
+        'incidentLocation' => $fields['incidentLocation'] ?? '',
+        'reportType' => $fields['reportType'] ?? '',
+        'reportMemo' => $fields['reportMemo'] ?? '',
+        'companyComment' => $fields['companyComment'] ?? '',
+        'submittedAtText' => format_firestore_time((string)($fields['submittedAt'] ?? '')),
         'updatedAtText' => format_firestore_time((string)($fields['updatedAt'] ?? '')),
-        'videoPath' => $videoPath,
-        'videoExists' => $videoPath !== '',
+        'submissionSequence' => $fields['submissionSequence'] ?? null,
+        'submissionSequenceText' => $fields['submissionSequenceText'] ?? '',
+        'nasSubmissionFolder' => $fields['nasSubmissionFolder'] ?? '',
+        'attachments' => $attachments,
+        'videoPath' => (string)($firstAttachment['nasRelativePath'] ?? ''),
+        'videoExists' => (bool)($firstAttachment['exists'] ?? false),
         'raw' => $fields,
     ];
 }
@@ -76,7 +80,7 @@ json_success($response);
 
 function submitter_label(array $fields): string
 {
-    foreach (['ownerDisplayName', 'ownerEmail', 'guestId', 'ownerUid'] as $field) {
+    foreach (['ownerDisplayName', 'guestId', 'ownerUid'] as $field) {
         $value = trim((string)($fields[$field] ?? ''));
         if ($value !== '') {
             return $value;
@@ -84,6 +88,13 @@ function submitter_label(array $fields): string
     }
 
     return '제출자 없음';
+}
+
+function normalize_status(string $status): string
+{
+    return in_array($status, ['검토 대기 중', '검토 완료', '보완 요청', '신고 완료', '신고 결과'], true)
+        ? $status
+        : '검토 대기 중';
 }
 
 function sample_submissions_from_folder(array $config, int $limit): array
@@ -120,17 +131,26 @@ function sample_submissions_from_folder(array $config, int $limit): array
     return array_map(static function (array $file): array {
         return [
             'id' => 'sample-' . rawurlencode($file['path']),
-            'status' => 'waiting_review',
+            'status' => '검토 대기 중',
             'ownerUid' => '',
             'guestId' => 'NAS-SAMPLE',
             'ownerDisplayName' => 'NAS 샘플 폴더',
-            'ownerEmail' => '',
             'submitterLabel' => 'NAS 샘플 폴더',
-            'originalFileName' => $file['name'],
-            'incidentLocationText' => '\\\\SyDisk\\SafeClipUpLoads',
-            'violationTypeCandidate' => '샘플 영상',
-            'userMemo' => 'NAS Videos 폴더에서 읽은 영상입니다.',
-            'createdAtText' => date('Y-m-d H:i', $file['mtime']),
+            'incidentLocation' => '\\\\SyDisk\\SafeClipUpLoads',
+            'reportType' => '샘플 영상',
+            'reportMemo' => 'NAS SafeClipUpLoads 폴더에서 읽은 파일입니다.',
+            'companyComment' => '',
+            'submittedAtText' => date('Y-m-d H:i', $file['mtime']),
+            'attachments' => [[
+                'index' => 0,
+                'displayName' => $file['name'],
+                'kind' => is_image_extension($file['path']) ? 'photo' : 'video',
+                'mimeType' => is_image_extension($file['path']) ? 'image/jpeg' : 'video/mp4',
+                'sizeBytes' => null,
+                'uploadedSizeBytes' => null,
+                'nasRelativePath' => $file['path'],
+                'exists' => true,
+            ]],
             'videoPath' => $file['path'],
             'videoExists' => true,
             'sample' => true,

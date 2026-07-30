@@ -38,7 +38,7 @@ class FirestoreSubmissionRepository(
                         data = data
                     )
                 }
-            }
+            }.sortedByDescending { it.submittedAtMillis }
             SubmissionListResult.Success(
                 records = records,
                 message = "제출 내역 ${records.size}개를 불러왔습니다."

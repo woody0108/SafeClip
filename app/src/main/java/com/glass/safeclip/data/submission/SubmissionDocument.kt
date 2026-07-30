@@ -12,30 +12,26 @@ import java.util.Locale
 
 object SubmissionDocument {
     fun createFields(input: SubmissionInput): Map<String, Any?> {
+        val incidentDateTime = splitIncidentDateTime(input.draft.incidentDateTime)
         return mapOf(
             "ownerUid" to input.ownerUid,
             "guestId" to input.guestId,
             "ownerDisplayName" to input.ownerDisplayName,
-            "ownerEmail" to input.ownerEmail,
             "status" to STATUS_WAITING_REVIEW,
-            "sourceUri" to input.video.uriString,
-            "originalFileName" to input.video.displayName,
-            "fileSizeBytes" to input.video.sizeBytes,
-            "originalLastModifiedMillis" to input.video.lastModifiedMillis,
-            "originalFolderPath" to input.video.folderPath,
-            "incidentDateTime" to input.draft.incidentDateTime,
-            "incidentLocationText" to input.draft.locationText,
-            "violationTypeCandidate" to input.draft.incidentType,
-            "userMemo" to input.draft.memo,
-            "reportReviewConsent" to input.draft.reviewConsent,
-            "videoStorageConsent" to input.draft.storageConsent,
-            "trafficRiskDataConsent" to input.draft.dataUseConsent,
+            "incidentDate" to incidentDateTime.date,
+            "incidentTime" to incidentDateTime.time,
+            "incidentLocation" to input.draft.locationText,
+            "reportType" to input.draft.incidentType,
+            "reportMemo" to input.draft.memo,
+            "companyComment" to "",
+            "reviewConsent" to input.draft.reviewConsent,
+            "storageConsent" to input.draft.storageConsent,
+            "dataUseConsent" to input.draft.dataUseConsent,
             "attachments" to input.attachments.map { it.toFirestoreFields() },
-            "videoCount" to input.attachments.count { it.kind == SubmissionAttachmentKind.Video },
-            "photoCount" to input.attachments.count { it.kind == SubmissionAttachmentKind.Photo },
-            "nasRelativePath" to input.attachments.firstOrNull()?.nasRelativePath,
-            "nasFiles" to nasFiles(input.attachments),
-            "createdAt" to FieldValue.serverTimestamp(),
+            "submissionSequence" to input.submissionSequence,
+            "submissionSequenceText" to input.submissionSequenceText,
+            "nasSubmissionFolder" to input.nasSubmissionFolder,
+            "submittedAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
     }
@@ -45,63 +41,88 @@ object SubmissionDocument {
             "ownerUid" to profile.uid,
             "guestId" to profile.guestId,
             "ownerDisplayName" to (profile.displayName ?: profile.email),
-            "ownerEmail" to profile.email,
             "updatedAt" to FieldValue.serverTimestamp()
         )
     }
 
     fun toLocalRecord(documentId: String, data: Map<String, Any?>): LocalSubmissionRecord {
-        val incidentType = data["violationTypeCandidate"] as? String ?: ""
+        val incidentType = data["reportType"] as? String ?: ""
+        val attachments = attachments(data)
+        val attachment = firstAttachment(data)
+        val incidentDateTime = listOf(
+            data["incidentDate"] as? String ?: "",
+            data["incidentTime"] as? String ?: ""
+        ).filter { it.isNotBlank() }.joinToString(" ")
+        val submittedAtDate = dateFromSubmittedAt(data["submittedAt"])
         return LocalSubmissionRecord(
             id = documentId,
             video = VideoCandidate(
-                uriString = data["sourceUri"] as? String ?: "",
-                displayName = data["originalFileName"] as? String ?: "제출 파일",
-                sizeBytes = data["fileSizeBytes"] as? Long,
-                lastModifiedMillis = data["originalLastModifiedMillis"] as? Long,
-                folderPath = data["originalFolderPath"] as? String ?: ""
+                uriString = attachment?.get("nasRelativePath") as? String ?: "",
+                displayName = attachment?.get("displayName") as? String ?: "제출 파일",
+                sizeBytes = attachment?.get("sizeBytes") as? Long,
+                lastModifiedMillis = null,
+                folderPath = data["nasSubmissionFolder"] as? String ?: ""
             ),
             title = incidentType.ifBlank { "블랙박스 영상 제출" },
-            incidentDateTime = data["incidentDateTime"] as? String ?: "",
-            locationText = data["incidentLocationText"] as? String ?: "",
+            incidentDateTime = incidentDateTime,
+            locationText = data["incidentLocation"] as? String ?: "",
             incidentType = incidentType,
-            memo = data["userMemo"] as? String ?: "",
+            memo = data["reportMemo"] as? String ?: "",
             status = statusFromFirestore(data["status"] as? String),
-            submittedAtText = formatSubmittedAt(data["createdAt"])
+            submittedAtText = formatSubmittedAt(submittedAtDate),
+            submittedAtMillis = submittedAtDate?.time ?: 0L,
+            companyComment = data["companyComment"] as? String ?: "",
+            attachmentCount = if (attachments.isEmpty()) 1 else attachments.size,
+            videoCount = if (attachments.isEmpty()) 1 else attachments.count { it["kind"] == "video" },
+            photoCount = attachments.count { it["kind"] == "photo" }
         )
     }
 
-    private fun formatSubmittedAt(value: Any?): String {
-        val date = when (value) {
+    private fun dateFromSubmittedAt(value: Any?): Date? {
+        return when (value) {
             is Timestamp -> value.toDate()
             is Date -> value
             is Long -> Date(value)
             else -> null
-        } ?: return ""
+        }
+    }
 
-        return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA).format(date)
+    private fun formatSubmittedAt(date: Date?): String {
+        return date?.let { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA).format(it) }.orEmpty()
     }
 
     private fun statusFromFirestore(status: String?): SubmissionStatus {
         return when (status) {
-            "uploading" -> SubmissionStatus.Uploading
-            "reviewing" -> SubmissionStatus.Reviewing
-            "needs_more_info" -> SubmissionStatus.NeedsMoreInfo
-            "report_package_ready" -> SubmissionStatus.ReportPackageReady
-            "rejected" -> SubmissionStatus.Rejected
-            "completed" -> SubmissionStatus.Completed
+            "검토 완료" -> SubmissionStatus.ReviewCompleted
+            "보완 요청" -> SubmissionStatus.SupplementRequested
+            "신고 완료" -> SubmissionStatus.ReportCompleted
+            "신고 결과" -> SubmissionStatus.ReportResult
             else -> SubmissionStatus.WaitingReview
         }
     }
 
-    private fun nasFiles(attachments: List<SubmissionAttachment>): Map<String, String> {
-        val uploaded = attachments.mapNotNull { attachment ->
-            attachment.nasRelativePath?.let { path -> attachment to path }
-        }
-        return uploaded.mapIndexed { index, (_, path) ->
-            "file${index + 1}" to path
-        }.toMap()
+    private fun firstAttachment(data: Map<String, Any?>): Map<String, Any?>? {
+        return attachments(data).firstOrNull()
     }
 
-    private const val STATUS_WAITING_REVIEW = "waiting_review"
+    private fun attachments(data: Map<String, Any?>): List<Map<String, Any?>> {
+        return (data["attachments"] as? List<*>)
+            ?.mapNotNull { it as? Map<String, Any?> }
+            .orEmpty()
+    }
+
+    private fun splitIncidentDateTime(value: String): IncidentDateTime {
+        val parts = value.trim().split(Regex("\\s+"), limit = 2)
+        return IncidentDateTime(
+            date = parts.getOrNull(0).orEmpty(),
+            time = parts.getOrNull(1).orEmpty()
+        )
+    }
+
+    private data class IncidentDateTime(
+        val date: String,
+        val time: String
+    )
+
+    private const val STATUS_WAITING_REVIEW = "검토 대기 중"
 }

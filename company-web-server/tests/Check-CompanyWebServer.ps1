@@ -9,7 +9,7 @@ function Assert-FileContains {
         [string] $Message
     )
 
-    $content = Get-Content -LiteralPath $Path -Raw
+    $content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     if ($content -notmatch $Pattern) {
         throw $Message
     }
@@ -24,6 +24,7 @@ $requiredFiles = @(
     'api/bootstrap.php',
     'api/submissions.php',
     'api/status.php',
+    'api/asks.php',
     'api/diagnostics.php',
     'api/video.php',
     'data/.gitkeep'
@@ -39,6 +40,7 @@ foreach ($file in $requiredFiles) {
 $index = Join-Path $root 'index.html'
 $appJs = Join-Path $root 'assets/app.js'
 $statusPhp = Join-Path $root 'api/status.php'
+$asksPhp = Join-Path $root 'api/asks.php'
 $diagnosticsPhp = Join-Path $root 'api/diagnostics.php'
 $videoPhp = Join-Path $root 'api/video.php'
 $submissionsPhp = Join-Path $root 'api/submissions.php'
@@ -48,15 +50,34 @@ $bootstrapPhp = Join-Path $root 'api/bootstrap.php'
 Assert-FileContains $index 'aria-current="page"' 'Sidebar must not expose fake clickable navigation buttons.'
 Assert-FileContains $appJs 'api/submissions\.php' 'Admin UI must read submissions from the server API.'
 Assert-FileContains $appJs 'api/status\.php' 'Admin UI must call the status API.'
+Assert-FileContains $appJs 'api/asks\.php' 'Admin UI must call the ask API.'
+Assert-FileContains $appJs 'filteredSubmissions' 'Admin UI must filter submissions.'
+Assert-FileContains $appJs 'filteredAsks' 'Admin UI must filter asks.'
 Assert-FileContains $appJs 'api/video\.php' 'Admin UI must show videos through the server video API.'
-Assert-FileContains $appJs 'completed' 'Review complete button must use the completed Firestore status.'
+Assert-FileContains $appJs 'status-review-completed' 'Review complete button must use the Korean review-completed Firestore status.'
+Assert-FileContains $appJs 'statuses' 'Admin UI must render all fixed status buttons.'
+Assert-FileContains $appJs 'updateSelectedStatus' 'Admin UI must update any selected status.'
+Assert-FileContains $appJs 'companyComment' 'Admin UI must send and render company comments.'
+Assert-FileContains $appJs 'commentForStatusChange' 'Admin UI must request a comment for comment-required statuses.'
+Assert-FileContains $index 'status-actions' 'Admin UI must expose a status action area.'
+Assert-FileContains $index 'detail-company-comment' 'Admin UI must show company comments in submission detail.'
 Assert-FileContains $appJs 'formatApiError' 'Admin UI must show clear setup errors from the API.'
-Assert-FileContains $appJs 'videoPath' 'Admin UI must use one video path per submission.'
-Assert-FileContains $appJs 'submitterLabel' 'Admin UI must show submitter nickname/email/guest label.'
-Assert-FileContains $appJs 'incidentDateTime' 'Admin UI must show incident date/time from Firestore.'
+Assert-FileContains $appJs 'selectedFileIndex' 'Admin UI must track the selected attachment inside a submission.'
+Assert-FileContains $appJs 'data-file-filter' 'Admin UI must provide all/video/photo file tabs.'
+Assert-FileContains $appJs 'submitterLabel' 'Admin UI must show submitter nickname/guest label.'
+Assert-FileContains $appJs 'incidentDate' 'Admin UI must show incident date from Firestore.'
+Assert-FileContains $appJs 'incidentTime' 'Admin UI must show incident time from Firestore.'
 Assert-FileContains $appJs 'fileSizeLabel' 'Admin UI must show Firestore file size.'
-Assert-FileContains $statusPhp "'completed'" 'Status API must allow completed.'
+Assert-FileContains $statusPhp 'allowedStatuses' 'Status API must allow the Korean fixed status list.'
+Assert-FileContains $statusPhp 'companyComment' 'Status API must write companyComment.'
 Assert-FileContains $statusPhp 'updatedAt' 'Status API must update updatedAt.'
+Assert-FileContains $asksPhp "collectionId' => 'ask'" 'Ask API must read the ask collection.'
+Assert-FileContains $asksPhp 'questionType' 'Ask API must include the question type field.'
+Assert-FileContains $asksPhp 'answer' 'Ask API must write answers.'
+Assert-FileContains $asksPhp "action === 'delete'" 'Ask API must delete ask documents.'
+Assert-FileContains $index 'ask-view' 'Admin UI must include the ask response view.'
+Assert-FileContains $index 'data-submission-filter="waiting"' 'Admin UI must include waiting submission filter.'
+Assert-FileContains $index 'data-ask-filter="waiting"' 'Admin UI must include unanswered ask filter.'
 Assert-FileContains $diagnosticsPhp 'serviceAccountExists' 'Diagnostics API must check Firebase service account path.'
 Assert-FileContains $diagnosticsPhp 'curlLoaded' 'Diagnostics API must check PHP curl extension.'
 Assert-FileContains $diagnosticsPhp 'opensslLoaded' 'Diagnostics API must check PHP openssl extension.'
@@ -76,12 +97,14 @@ Assert-FileContains $submissionsPhp "\\$_GET\\['mode'\\]" 'Sample folder mode mu
 Assert-FileContains $submissionsPhp 'sampleFolder' 'Submissions API must return sample folder diagnostics.'
 Assert-FileContains $submissionsPhp 'save_json_cache' 'Submissions API must save the latest JSON response locally when possible.'
 Assert-FileContains $submissionsPhp 'submitterLabel' 'Submissions API must normalize submitter label.'
+Assert-FileContains $submissionsPhp 'submittedAt' 'Submissions API must order and display submittedAt.'
+Assert-FileContains $bootstrapPhp 'submission_attachments' 'Submissions API must normalize all Firestore attachments.'
 Assert-FileContains $submissionsPhp 'raw' 'Submissions API must include raw Firestore fields for inspection.'
 Assert-FileContains $config 'service_account_json' 'Config must use a server-side Firebase service account file.'
 Assert-FileContains $config 'SafeClipUpLoads' 'Config example must include the NAS upload folder.'
 
-$indexContent = Get-Content -LiteralPath $index -Raw
-$appContent = Get-Content -LiteralPath $appJs -Raw
+$indexContent = Get-Content -LiteralPath $index -Raw -Encoding UTF8
+$appContent = Get-Content -LiteralPath $appJs -Raw -Encoding UTF8
 if ($indexContent -match 'front-tab|rear-tab') {
     throw 'Video UI must not contain front/rear tabs.'
 }

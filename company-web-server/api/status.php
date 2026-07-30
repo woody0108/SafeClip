@@ -15,21 +15,28 @@ if (!is_array($input)) {
 
 $id = clean_document_id((string)($input['id'] ?? ''));
 $status = (string)($input['status'] ?? '');
+$companyComment = trim((string)($input['companyComment'] ?? ''));
 if ($id === '') {
     json_fail(400, 'Submission ID is missing.');
 }
-if ($status !== 'completed') {
-    json_fail(400, 'Only completed status is allowed.');
+$allowedStatuses = ['검토 대기 중', '검토 완료', '보완 요청', '신고 완료', '신고 결과'];
+if (!in_array($status, $allowedStatuses, true)) {
+    json_fail(400, 'Unknown submission status.');
+}
+if (in_array($status, ['보완 요청', '신고 결과'], true) && $companyComment === '') {
+    json_fail(400, 'Company comment is required for this status.');
 }
 
 $config = app_config();
+$updateMask = 'updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=companyComment';
 firestore_request(
     $config,
     'PATCH',
-    '/submissions/' . rawurlencode($id) . '?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt',
+    '/submissions/' . rawurlencode($id) . '?' . $updateMask,
     [
         'fields' => [
-            'status' => ['stringValue' => 'completed'],
+            'status' => ['stringValue' => $status],
+            'companyComment' => ['stringValue' => $companyComment],
             'updatedAt' => ['timestampValue' => gmdate('Y-m-d\TH:i:s\Z')],
         ],
     ]
@@ -37,11 +44,12 @@ firestore_request(
 
 save_json_cache('last-status-update.json', [
     'id' => $id,
-    'status' => 'completed',
+    'status' => $status,
+    'companyComment' => $companyComment,
     'updatedAt' => gmdate('Y-m-d\TH:i:s\Z'),
 ]);
 
-json_success(['id' => $id, 'status' => 'completed']);
+json_success(['id' => $id, 'status' => $status, 'companyComment' => $companyComment]);
 
 function clean_document_id(string $id): string
 {

@@ -13,17 +13,17 @@ data class SubmissionAttachment(
     val kind: SubmissionAttachmentKind,
     val nasStoredName: String? = null,
     val nasRelativePath: String? = null,
-    val uploadedSizeBytes: Long? = null
+    val uploadedSizeBytes: Long? = null,
+    val nasSubmissionFolder: String? = null,
+    val submissionSequence: Int? = null,
+    val submissionSequenceText: String? = null
 ) {
     fun toFirestoreFields(): Map<String, Any?> {
         return mapOf(
-            "uriString" to uriString,
             "displayName" to displayName,
             "mimeType" to mimeType,
             "sizeBytes" to sizeBytes,
-            "folderPath" to folderPath,
             "kind" to kind.firestoreValue,
-            "nasStoredName" to nasStoredName,
             "nasRelativePath" to nasRelativePath,
             "uploadedSizeBytes" to uploadedSizeBytes
         )
@@ -43,7 +43,10 @@ data class SubmissionAttachment(
         return copy(
             nasStoredName = response.storedName,
             nasRelativePath = response.relativePath,
-            uploadedSizeBytes = response.sizeBytes
+            uploadedSizeBytes = response.sizeBytes,
+            nasSubmissionFolder = response.submissionFolder,
+            submissionSequence = response.submissionSequence,
+            submissionSequenceText = response.submissionSequenceText
         )
     }
 
@@ -152,6 +155,19 @@ object SubmissionAttachmentRules {
         }
 
         return AttachmentSelectionResult.Accepted(current + next)
+    }
+
+    fun canSubmitAll(attachments: List<SubmissionAttachment>): Boolean {
+        val videos = attachments.count { it.kind == SubmissionAttachmentKind.Video }
+        val photos = attachments.count { it.kind == SubmissionAttachmentKind.Photo }
+        return videos <= MaxVideos &&
+            photos <= MaxPhotos &&
+            attachments.all { attachment ->
+                when (attachment.kind) {
+                    SubmissionAttachmentKind.Video -> isUnderSizeLimit(attachment, MaxVideoBytes)
+                    SubmissionAttachmentKind.Photo -> isUnderSizeLimit(attachment, MaxPhotoBytes)
+                }
+            }
     }
 
     private fun isUnderSizeLimit(attachment: SubmissionAttachment, maxBytes: Long): Boolean {

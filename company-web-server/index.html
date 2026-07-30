@@ -17,7 +17,8 @@
         </div>
       </div>
       <nav aria-label="주요 메뉴">
-        <span class="nav-item active" aria-current="page">영상 검토</span>
+        <button id="review-nav" class="nav-item active" type="button" aria-current="page">영상 검토</button>
+        <button id="ask-nav" class="nav-item" type="button">문의 응답</button>
       </nav>
       <p class="network-note">내부망 전용으로 운영하세요.</p>
     </aside>
@@ -31,6 +32,7 @@
         <button id="refresh-button" class="ghost-button" type="button">새로고침</button>
       </header>
 
+      <section id="review-view">
       <section class="metrics" aria-label="제출 요약">
         <article>
           <span>전체 제출</span>
@@ -45,16 +47,70 @@
           <strong id="metric-completed">0</strong>
         </article>
       </section>
+      </section>
 
-      <section class="review-layout">
-        <section class="panel video-panel" aria-label="영상 보기">
+      <section id="ask-view" class="hidden">
+        <section class="review-layout">
+          <section class="panel video-panel" aria-label="문의 내용">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Ask</p>
+                <h2 id="selected-ask-title">문의를 선택하세요</h2>
+              </div>
+            </div>
+            <dl class="detail-grid">
+              <div>
+                <dt>문의자 ID</dt>
+                <dd id="ask-detail-id">-</dd>
+              </div>
+              <div>
+                <dt>질문 시각</dt>
+                <dd id="ask-detail-time">-</dd>
+              </div>
+              <div class="wide">
+                <dt>질문</dt>
+                <dd id="ask-detail-question">-</dd>
+              </div>
+            </dl>
+            <label class="answer-label" for="ask-answer-input">대답</label>
+            <textarea id="ask-answer-input" class="answer-input" rows="6"></textarea>
+            <button id="ask-save-button" class="primary-button" type="button" disabled>대답 저장</button>
+          </section>
+
+          <section class="panel list-panel" aria-label="문의 목록">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Questions</p>
+                <h2>문의 목록</h2>
+              </div>
+            </div>
+            <div class="tabs compact-tabs" role="tablist" aria-label="문의 답변 상태">
+              <button class="tab active" type="button" data-ask-filter="all">전체</button>
+              <button class="tab" type="button" data-ask-filter="waiting">미답변</button>
+              <button class="tab" type="button" data-ask-filter="answered">답변완료</button>
+            </div>
+            <div id="ask-list" class="submission-list"></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="review-layout" class="review-layout">
+        <section class="panel video-panel" aria-label="제출 파일 보기">
           <div class="panel-header">
             <div>
-              <p class="eyebrow">Video</p>
+              <p class="eyebrow">Files</p>
               <h2 id="selected-title">제출을 선택하세요</h2>
             </div>
             <span id="selected-status" class="status-chip">대기</span>
           </div>
+
+          <div class="tabs" role="tablist" aria-label="파일 종류">
+            <button id="file-tab-all" class="tab active" type="button" data-file-filter="all">전체</button>
+            <button id="file-tab-video" class="tab" type="button" data-file-filter="video">비디오</button>
+            <button id="file-tab-photo" class="tab" type="button" data-file-filter="photo">사진</button>
+          </div>
+
+          <div id="attachment-list" class="attachment-list" aria-label="첨부 파일 목록"></div>
 
           <div class="video-frame">
             <video id="review-video" controls preload="metadata"></video>
@@ -73,18 +129,18 @@
             </div>
             <div>
               <dt>제출 시간</dt>
-              <dd id="detail-created">-</dd>
+              <dd id="detail-submitted">-</dd>
             </div>
             <div>
-              <dt>사건 일시</dt>
+              <dt>일시</dt>
               <dd id="detail-incident-time">-</dd>
             </div>
             <div>
-              <dt>사건 위치</dt>
+              <dt>위치</dt>
               <dd id="detail-location">-</dd>
             </div>
             <div>
-              <dt>사건 유형</dt>
+              <dt>신고 유형</dt>
               <dd id="detail-type">-</dd>
             </div>
             <div>
@@ -99,9 +155,16 @@
               <dt>신고 내용</dt>
               <dd id="detail-memo">-</dd>
             </div>
+            <div id="detail-company-comment-row" class="wide">
+              <dt id="detail-company-comment-label">처리 의견</dt>
+              <dd id="detail-company-comment">-</dd>
+            </div>
           </dl>
 
-          <button id="complete-button" class="primary-button" type="button" disabled>검토완료</button>
+          <div>
+            <p class="eyebrow">Status</p>
+            <div id="status-actions" class="status-actions" aria-label="상태 변경"></div>
+          </div>
           <p id="action-message" class="message"></p>
         </section>
 
@@ -111,6 +174,10 @@
               <p class="eyebrow">Submissions</p>
               <h2>최근 제출 목록</h2>
             </div>
+          </div>
+          <div class="tabs compact-tabs" role="tablist" aria-label="제출 상태">
+            <button class="tab active" type="button" data-submission-filter="all">전체</button>
+            <button class="tab" type="button" data-submission-filter="waiting">대기중</button>
           </div>
           <div id="submission-list" class="submission-list"></div>
         </section>

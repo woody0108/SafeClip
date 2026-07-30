@@ -29,10 +29,12 @@ sealed interface SafeClipScreen {
         val initialAttachment: SubmissionAttachment,
         val availableFiles: List<ManagedFolderFile>,
         val availableFolderPath: String,
-        val eventFiles: List<ManagedFolderFile>
+        val eventFiles: List<ManagedFolderFile>,
+        val returnScreen: SafeClipScreen = VideoPreview(video)
     ) : SafeClipScreen
     data object SubmissionStatus : SafeClipScreen
     data object Settings : SafeClipScreen
+    data object Ask : SafeClipScreen
 
     companion object {
         fun first(): SafeClipScreen = Boot

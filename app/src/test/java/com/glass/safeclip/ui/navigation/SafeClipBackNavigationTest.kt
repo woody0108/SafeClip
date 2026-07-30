@@ -68,11 +68,30 @@ class SafeClipBackNavigationTest {
                 initialAttachment = SubmissionAttachment.fromVideoCandidate(video),
                 availableFiles = emptyList(),
                 availableFolderPath = "EVENT",
-                eventFiles = emptyList()
+                eventFiles = emptyList(),
+                returnScreen = SafeClipScreen.VideoPreview(video)
             )
         )
 
         assertEquals(SafeClipScreen.VideoPreview(video), previous)
+    }
+
+    @Test
+    fun directSubmissionFormBackGoesToOriginalBrowser() {
+        val browser = SafeClipScreen.VideoBrowser(VideoBrowserSource.SafeClip)
+        val previous = SafeClipBackNavigation.previousScreen(
+            SafeClipScreen.SubmissionForm(
+                video = video,
+                clip = null,
+                initialAttachment = SubmissionAttachment.fromVideoCandidate(video),
+                availableFiles = emptyList(),
+                availableFolderPath = "SafeClip 폴더",
+                eventFiles = emptyList(),
+                returnScreen = browser
+            )
+        )
+
+        assertEquals(browser, previous)
     }
 
     @Test

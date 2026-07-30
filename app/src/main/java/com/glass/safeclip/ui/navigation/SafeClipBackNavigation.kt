@@ -11,9 +11,10 @@ object SafeClipBackNavigation {
             is SafeClipScreen.FolderManager -> SafeClipScreen.Home
             is SafeClipScreen.VideoPreview -> screen.returnScreen
             is SafeClipScreen.ImagePreview -> screen.returnScreen
-            is SafeClipScreen.SubmissionForm -> SafeClipScreen.VideoPreview(screen.video)
+            is SafeClipScreen.SubmissionForm -> screen.returnScreen
             SafeClipScreen.SubmissionStatus -> SafeClipScreen.Home
             SafeClipScreen.Settings -> SafeClipScreen.Home
+            SafeClipScreen.Ask -> SafeClipScreen.Settings
         }
     }
 }

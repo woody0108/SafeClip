@@ -20,23 +20,39 @@ class NasSubmissionUploadClient(
 
     suspend fun uploadAll(
         submissionId: String,
-        attachments: List<SubmissionAttachment>
+        submitterLabel: String,
+        attachments: List<SubmissionAttachment>,
+        onProgress: suspend (NasSubmissionUploadProgress) -> Unit = {}
     ): List<SubmissionAttachment> {
         if (!isConfigured()) {
             throw IllegalStateException("NAS 업로드 주소와 키가 설정되지 않았습니다.")
         }
         return withContext(Dispatchers.IO) {
-            attachments.map { attachment ->
-                attachment.withUploadResponse(uploadOne(submissionId, attachment))
+            attachments.mapIndexed { index, attachment ->
+                attachment.withUploadResponse(
+                    uploadOne(
+                        submissionId = submissionId,
+                        submitterLabel = submitterLabel,
+                        attachment = attachment,
+                        fileIndex = index + 1,
+                        totalFiles = attachments.size,
+                        onProgress = onProgress
+                    )
+                )
             }
         }
     }
 
-    private fun uploadOne(
+    private suspend fun uploadOne(
         submissionId: String,
-        attachment: SubmissionAttachment
+        submitterLabel: String,
+        attachment: SubmissionAttachment,
+        fileIndex: Int,
+        totalFiles: Int,
+        onProgress: suspend (NasSubmissionUploadProgress) -> Unit
     ): NasSubmissionUploadResponse {
         val boundary = "SafeClip-${UUID.randomUUID()}"
+        val fileSizeBytes = attachment.sizeBytes
         val connection = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
@@ -45,15 +61,36 @@ class NasSubmissionUploadClient(
             readTimeout = 120_000
             setRequestProperty("X-SafeClip-Upload-Key", uploadKey)
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            if (fileSizeBytes != null && fileSizeBytes > 0L) {
+                setFixedLengthStreamingMode(
+                    NasSubmissionMultipartBody.contentLength(
+                        boundary = boundary,
+                        submissionId = submissionId,
+                        submitterLabel = submitterLabel,
+                        originalFileName = attachment.displayName,
+                        deviceLabel = "android",
+                        mimeType = attachment.mimeType,
+                        fileSizeBytes = fileSizeBytes
+                    )
+                )
+            }
         }
 
         try {
             DataOutputStream(connection.outputStream).use { output ->
-                writeTextPart(output, boundary, "submission_id", submissionId)
-                writeTextPart(output, boundary, "original_file_name", attachment.displayName)
-                writeTextPart(output, boundary, "device_label", "android")
-                writeFilePart(output, boundary, attachment)
-                output.writeBytes("--$boundary--\r\n")
+                output.write(NasSubmissionMultipartBody.textPart(boundary, "submission_id", submissionId))
+                output.write(NasSubmissionMultipartBody.textPart(boundary, "submitter_label", submitterLabel))
+                output.write(NasSubmissionMultipartBody.textPart(boundary, "original_file_name", attachment.displayName))
+                output.write(NasSubmissionMultipartBody.textPart(boundary, "device_label", "android"))
+                writeFilePart(
+                    output = output,
+                    boundary = boundary,
+                    attachment = attachment,
+                    fileIndex = fileIndex,
+                    totalFiles = totalFiles,
+                    onProgress = onProgress
+                )
+                output.write(NasSubmissionMultipartBody.closingBoundary(boundary))
                 output.flush()
             }
 
@@ -69,30 +106,52 @@ class NasSubmissionUploadClient(
         }
     }
 
-    private fun writeTextPart(
+    private suspend fun writeFilePart(
         output: DataOutputStream,
         boundary: String,
-        name: String,
-        value: String
+        attachment: SubmissionAttachment,
+        fileIndex: Int,
+        totalFiles: Int,
+        onProgress: suspend (NasSubmissionUploadProgress) -> Unit
     ) {
-        output.writeBytes("--$boundary\r\n")
-        output.writeBytes("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
-        output.write(value.toByteArray(Charsets.UTF_8))
-        output.writeBytes("\r\n")
-    }
-
-    private fun writeFilePart(
-        output: DataOutputStream,
-        boundary: String,
-        attachment: SubmissionAttachment
-    ) {
-        output.writeBytes("--$boundary\r\n")
-        output.writeBytes(
-            "Content-Disposition: form-data; name=\"file\"; filename=\"${attachment.displayName}\"\r\n"
+        output.write(
+            NasSubmissionMultipartBody.fileHeader(
+                boundary = boundary,
+                fileName = attachment.displayName,
+                mimeType = attachment.mimeType
+            )
         )
-        output.writeBytes("Content-Type: ${attachment.mimeType.ifBlank { "application/octet-stream" }}\r\n\r\n")
         context.contentResolver.openInputStream(Uri.parse(attachment.uriString))?.use { input ->
-            input.copyTo(output, bufferSize = 64 * 1024)
+            val buffer = ByteArray(64 * 1024)
+            var sent = 0L
+            var lastPercent: Int? = null
+            onProgress(
+                NasSubmissionUploadProgress(
+                    fileIndex = fileIndex,
+                    totalFiles = totalFiles,
+                    fileName = attachment.displayName,
+                    bytesSent = sent,
+                    totalBytes = attachment.sizeBytes
+                )
+            )
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                output.write(buffer, 0, read)
+                sent += read
+                val progress = NasSubmissionUploadProgress(
+                    fileIndex = fileIndex,
+                    totalFiles = totalFiles,
+                    fileName = attachment.displayName,
+                    bytesSent = sent,
+                    totalBytes = attachment.sizeBytes
+                )
+                val percent = progress.currentFilePercent
+                if (percent == null || percent != lastPercent) {
+                    lastPercent = percent
+                    onProgress(progress)
+                }
+            }
         } ?: throw IllegalStateException("첨부 파일을 열 수 없습니다: ${attachment.displayName}")
         output.writeBytes("\r\n")
     }

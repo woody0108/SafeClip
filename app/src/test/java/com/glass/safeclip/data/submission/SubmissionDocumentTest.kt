@@ -5,6 +5,7 @@ import com.glass.safeclip.data.profile.UserProfile
 import com.glass.safeclip.ui.submission.SubmissionDraft
 import com.google.firebase.Timestamp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,14 +42,28 @@ class SubmissionDocumentTest {
         val fields = SubmissionDocument.createFields(input)
 
         assertEquals("uid-123", fields["ownerUid"])
-        assertEquals("waiting_review", fields["status"])
-        assertEquals("event.mp4", fields["originalFileName"])
-        assertEquals("content://safeclip/video/1", fields["sourceUri"])
-        assertEquals("서울 강남구 테헤란로", fields["incidentLocationText"])
-        assertEquals("추돌 사고", fields["violationTypeCandidate"])
-        assertEquals(true, fields["reportReviewConsent"])
-        assertTrue(fields.containsKey("createdAt"))
+        assertEquals("검토 대기 중", fields["status"])
+        assertEquals("2026.07.15", fields["incidentDate"])
+        assertEquals("14:20", fields["incidentTime"])
+        assertEquals("서울 강남구 테헤란로", fields["incidentLocation"])
+        assertEquals("추돌 사고", fields["reportType"])
+        assertEquals("급정거 후 추돌", fields["reportMemo"])
+        assertEquals("", fields["companyComment"])
+        assertEquals(true, fields["reviewConsent"])
+        assertTrue(fields.containsKey("submittedAt"))
         assertTrue(fields.containsKey("updatedAt"))
+        assertFalse(fields.containsKey("createdAt"))
+        assertFalse(fields.containsKey("ownerEmail"))
+        assertFalse(fields.containsKey("sourceUri"))
+        assertFalse(fields.containsKey("originalFileName"))
+        assertFalse(fields.containsKey("fileSizeBytes"))
+        assertFalse(fields.containsKey("originalFolderPath"))
+        assertFalse(fields.containsKey("originalLastModifiedMillis"))
+        assertFalse(fields.containsKey("incidentDateTime"))
+        assertFalse(fields.containsKey("incidentLocationText"))
+        assertFalse(fields.containsKey("violationTypeCandidate"))
+        assertFalse(fields.containsKey("userMemo"))
+        assertFalse(fields.containsKey("reportReviewConsent"))
     }
 
     @Test
@@ -66,11 +81,13 @@ class SubmissionDocumentTest {
 
         val fields = SubmissionDocument.createFields(input)
 
-        assertEquals(1, fields["videoCount"])
-        assertEquals(1, fields["photoCount"])
+        assertFalse(fields.containsKey("videoCount"))
+        assertFalse(fields.containsKey("photoCount"))
         val attachments = fields["attachments"] as List<Map<String, Any?>>
         assertEquals("front.mp4", attachments[0]["displayName"])
         assertEquals("video", attachments[0]["kind"])
+        assertFalse(attachments[0].containsKey("uriString"))
+        assertFalse(attachments[0].containsKey("folderPath"))
         assertEquals("plate.jpg", attachments[1]["displayName"])
         assertEquals("photo", attachments[1]["kind"])
     }
@@ -84,23 +101,33 @@ class SubmissionDocumentTest {
             kind = SubmissionAttachmentKind.Video
         ).copy(
             nasStoredName = "stored.mp4",
-            nasRelativePath = "2026/07/29/stored.mp4",
-            uploadedSizeBytes = 1234L
+            nasRelativePath = "2026/07/29/베짱이들/01/stored.mp4",
+            uploadedSizeBytes = 1234L,
+            nasSubmissionFolder = "2026/07/29/베짱이들/01",
+            submissionSequence = 1,
+            submissionSequenceText = "01"
         )
         val input = SubmissionInput(
             ownerUid = null,
             video = video,
             draft = draft,
             guestId = "guest-1",
+            nasSubmissionFolder = uploaded.nasSubmissionFolder,
+            submissionSequence = uploaded.submissionSequence,
+            submissionSequenceText = uploaded.submissionSequenceText,
             attachments = listOf(uploaded)
         )
 
         val fields = SubmissionDocument.createFields(input)
 
-        assertEquals("2026/07/29/stored.mp4", fields["nasRelativePath"])
+        assertEquals("2026/07/29/베짱이들/01", fields["nasSubmissionFolder"])
+        assertEquals(1, fields["submissionSequence"])
+        assertEquals("01", fields["submissionSequenceText"])
+        assertFalse(fields.containsKey("nasRelativePath"))
+        assertFalse(fields.containsKey("nasFiles"))
         val attachments = fields["attachments"] as List<Map<String, Any?>>
-        assertEquals("stored.mp4", attachments[0]["nasStoredName"])
-        assertEquals("2026/07/29/stored.mp4", attachments[0]["nasRelativePath"])
+        assertFalse(attachments[0].containsKey("nasStoredName"))
+        assertEquals("2026/07/29/베짱이들/01/stored.mp4", attachments[0]["nasRelativePath"])
         assertEquals(1234L, attachments[0]["uploadedSizeBytes"])
     }
 
@@ -117,7 +144,7 @@ class SubmissionDocumentTest {
 
         assertNull(fields["ownerUid"])
         assertNull(fields["ownerDisplayName"])
-        assertNull(fields["ownerEmail"])
+        assertFalse(fields.containsKey("ownerEmail"))
         assertEquals("Guest-ABCD-1234", fields["guestId"])
     }
 
@@ -129,7 +156,11 @@ class SubmissionDocumentTest {
             draft = draft,
             guestId = "Guest-ABCD-1234",
             ownerDisplayName = "SafeClip User",
-            ownerEmail = "safeclip@example.com"
+            attachments = listOf(
+                attachment("content://front", "front.mp4", "video/mp4", SubmissionAttachmentKind.Video).copy(
+                    nasRelativePath = "2026/07/29/front.mp4"
+                )
+            )
         )
         val fields = SubmissionDocument.createFields(input)
 
@@ -140,13 +171,13 @@ class SubmissionDocumentTest {
 
         assertEquals("submission-123", record.id)
         assertEquals("추돌 사고", record.title)
-        assertEquals("event.mp4", record.video.displayName)
-        assertEquals("content://safeclip/video/1", record.video.uriString)
+        assertEquals("front.mp4", record.video.displayName)
+        assertEquals("2026/07/29/front.mp4", record.video.uriString)
         assertEquals("서울 강남구 테헤란로", record.locationText)
     }
 
     @Test
-    fun restoresSubmittedAtTextFromCreatedAtTimestamp() {
+    fun restoresSubmittedAtTextFromSubmittedAtTimestamp() {
         val previousTimeZone = TimeZone.getDefault()
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"))
         try {
@@ -160,7 +191,7 @@ class SubmissionDocumentTest {
                 set(Calendar.MILLISECOND, 0)
             }
             val fields = SubmissionDocument.createFields(input).toMutableMap()
-            fields["createdAt"] = Timestamp(submittedAt.time)
+            fields["submittedAt"] = Timestamp(submittedAt.time)
 
             val record = SubmissionDocument.toLocalRecord(
                 documentId = "submission-123",
@@ -188,7 +219,7 @@ class SubmissionDocumentTest {
         assertEquals("uid-123", fields["ownerUid"])
         assertEquals("Guest-ABCD-1234", fields["guestId"])
         assertEquals("SafeClip User", fields["ownerDisplayName"])
-        assertEquals("safeclip@example.com", fields["ownerEmail"])
+        assertFalse(fields.containsKey("ownerEmail"))
         assertTrue(fields.containsKey("updatedAt"))
     }
 
