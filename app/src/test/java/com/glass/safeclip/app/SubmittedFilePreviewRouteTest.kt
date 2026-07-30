@@ -26,11 +26,31 @@ class SubmittedFilePreviewRouteTest {
         assertEquals(SafeClipScreen.SubmissionStatus, (screen as SafeClipScreen.VideoPreview).returnScreen)
     }
 
-    private fun recordWithFileName(fileName: String): LocalSubmissionRecord {
+    @Test
+    fun `opens nas submission video through review video api`() {
+        val screen = SubmittedFilePreviewRoute.from(
+            record = recordWithFileName(
+                fileName = "event.mp4",
+                uriString = "2026/07/30/submitter/01/event.mp4"
+            ),
+            nasUploadUrl = "http://192.168.0.3:8080/api/nas-upload-api/public/upload.php"
+        )
+
+        assertTrue(screen is SafeClipScreen.VideoPreview)
+        assertEquals(
+            "http://192.168.0.3:8080/api/video.php?id=submission-1&file=0",
+            (screen as SafeClipScreen.VideoPreview).video.uriString
+        )
+    }
+
+    private fun recordWithFileName(
+        fileName: String,
+        uriString: String = "content://safeclip/$fileName"
+    ): LocalSubmissionRecord {
         return LocalSubmissionRecord(
             id = "submission-1",
             video = VideoCandidate(
-                uriString = "content://safeclip/$fileName",
+                uriString = uriString,
                 displayName = fileName,
                 sizeBytes = 100L,
                 lastModifiedMillis = null,

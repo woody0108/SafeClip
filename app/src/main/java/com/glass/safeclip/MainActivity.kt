@@ -1127,7 +1127,10 @@ class MainActivity : ComponentActivity() {
                         onBackHome = ::goBack,
                         onOpenSubmission = { },
                         onOpenSubmittedFile = { record ->
-                            screen = SubmittedFilePreviewRoute.from(record)
+                            screen = SubmittedFilePreviewRoute.from(
+                                record = record,
+                                nasUploadUrl = BuildConfig.SAFECLIP_NAS_UPLOAD_URL
+                            )
                         }
                     )
                 }
