@@ -10,8 +10,7 @@ enum class SubmissionStep {
     fun canContinue(draft: SubmissionDraft, attachments: List<SubmissionAttachment>): Boolean {
         return when (this) {
             Files -> attachments.isNotEmpty() && SubmissionAttachmentRules.canSubmitAll(attachments)
-            Details -> draft.hasRequiredIncidentInfo &&
-                attachments.isNotEmpty() &&
+            Details -> attachments.isNotEmpty() &&
                 SubmissionAttachmentRules.canSubmitAll(attachments)
         }
     }

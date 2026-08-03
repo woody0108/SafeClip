@@ -6,6 +6,10 @@ import com.glass.safeclip.data.submission.SubmissionAttachmentRules
 data class SubmissionDraft(
     val incidentDateTime: String = "",
     val locationText: String = "",
+    val locationDetail: String = "",
+    val locationLatitude: Double? = null,
+    val locationLongitude: Double? = null,
+    val locationSource: String = "",
     val incidentType: String = "",
     val memo: String = "",
     val reviewConsent: Boolean = false,
@@ -13,16 +17,12 @@ data class SubmissionDraft(
     val dataUseConsent: Boolean = false
 ) {
     val isReadyToSubmit: Boolean
-        get() = hasRequiredIncidentInfo &&
-            reviewConsent &&
+        get() = reviewConsent &&
             storageConsent &&
             dataUseConsent
 
     val hasRequiredIncidentInfo: Boolean
-        get() = incidentDateTime.isNotBlank() &&
-            locationText.isNotBlank() &&
-            incidentType.isNotBlank() &&
-            memo.isNotBlank()
+        get() = true
 
     fun canSubmitWith(attachments: List<SubmissionAttachment>): Boolean {
         return isReadyToSubmit &&

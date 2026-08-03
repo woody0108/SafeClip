@@ -4,7 +4,10 @@ import com.glass.safeclip.ui.submission.SubmissionDraft
 
 data class SubmissionFileMetadata(
     val incidentDateTimeText: String? = null,
-    val locationText: String? = null
+    val locationText: String? = null,
+    val locationLatitude: Double? = null,
+    val locationLongitude: Double? = null,
+    val locationSource: String = ""
 )
 
 data class SubmissionMetadataAutofillResult(
@@ -39,9 +42,27 @@ object SubmissionMetadataAutofill {
         } else {
             draft.locationText
         }
+        val nextLatitude = if (shouldFillLocation) {
+            metadata.locationLatitude
+        } else {
+            draft.locationLatitude
+        }
+        val nextLongitude = if (shouldFillLocation) {
+            metadata.locationLongitude
+        } else {
+            draft.locationLongitude
+        }
+        val nextSource = if (shouldFillLocation) {
+            metadata.locationSource
+        } else {
+            draft.locationSource
+        }
         val nextDraft = draft.copy(
             incidentDateTime = nextDateTime,
-            locationText = nextLocation
+            locationText = nextLocation,
+            locationLatitude = nextLatitude,
+            locationLongitude = nextLongitude,
+            locationSource = nextSource
         )
 
         return SubmissionMetadataAutofillResult(

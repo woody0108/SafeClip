@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.glass.safeclip.data.media.VideoClipExportResult
 import com.glass.safeclip.data.file.ManagedFolderFile
 import com.glass.safeclip.data.submission.AttachmentSelectionResult
@@ -62,6 +64,7 @@ import com.glass.safeclip.ui.theme.SafeClipBorder
 import com.glass.safeclip.ui.theme.SafeClipCyan
 import com.glass.safeclip.ui.video.VideoListText
 import java.util.Calendar
+import java.time.LocalDate
 
 @Composable
 fun SubmissionFormScreen(
@@ -72,6 +75,8 @@ fun SubmissionFormScreen(
     eventFiles: List<ManagedFolderFile>,
     uploadProgress: NasSubmissionUploadProgress?,
     uploadFailureMessage: String?,
+    kakaoMapNativeAppKey: String,
+    kakaoRestApiKey: String,
     onLoadRepresentativeMetadata: suspend (SubmissionAttachment) -> SubmissionFileMetadata?,
     onBack: () -> Unit,
     onSubmit: (SubmissionDraft, SubmissionAttachment, List<SubmissionAttachment>) -> Unit
@@ -79,6 +84,8 @@ fun SubmissionFormScreen(
     var draft by remember { mutableStateOf(SubmissionDraft()) }
     var step by remember { mutableStateOf(SubmissionStep.Files) }
     var showConsentDialog by remember { mutableStateOf(false) }
+    var showReportTypeDialog by remember { mutableStateOf(false) }
+    var showLocationPickerDialog by remember { mutableStateOf(false) }
     var incidentDateTimeFields by remember {
         mutableStateOf(SubmissionIncidentDateTimeFields.fromCombined(draft.incidentDateTime))
     }
@@ -326,10 +333,29 @@ fun SubmissionFormScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = draft.incidentType,
-                        onValueChange = { draft = draft.copy(incidentType = it) },
-                        label = { Text("신고 유형") },
+                        value = draft.locationDetail,
+                        onValueChange = { draft = draft.copy(locationDetail = it) },
+                        label = { Text("세부위치") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+                    SecondaryActionButton(
+                        text = if (kakaoMapNativeAppKey.isBlank()) "지도 API 설정 필요" else "지도에서 위치 선택",
+                        enabled = kakaoMapNativeAppKey.isNotBlank(),
+                        onClick = { showLocationPickerDialog = true },
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    if (kakaoMapNativeAppKey.isBlank()) {
+                        Text(
+                            text = "local.properties에 safeclip.kakaoNativeAppKey를 설정하면 카카오 지도에서 위치를 고를 수 있습니다.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                    ReportTypeSelector(
+                        selectedType = draft.incidentType,
+                        onClick = { showReportTypeDialog = true }
                     )
                     OutlinedTextField(
                         value = draft.memo,
@@ -390,8 +416,131 @@ fun SubmissionFormScreen(
                     }
                 )
             }
+            if (showReportTypeDialog) {
+                ReportTypeDialog(
+                    selectedType = draft.incidentType,
+                    onSelect = {
+                        draft = draft.copy(incidentType = it)
+                        showReportTypeDialog = false
+                    },
+                    onDismiss = { showReportTypeDialog = false }
+                )
+            }
+            if (showLocationPickerDialog) {
+                Dialog(
+                    onDismissRequest = { showLocationPickerDialog = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.background,
+                        border = BorderStroke(1.dp, SafeClipBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "지도에서 위치 선택",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                SecondaryActionButton(
+                                    text = "닫기",
+                                    onClick = { showLocationPickerDialog = false }
+                                )
+                            }
+                            Text(
+                                text = "키워드로 검색한 뒤 결과를 누르거나 지도에서 정확한 위치를 선택해주세요.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 19.sp
+                            )
+                            // 지도는 충분한 높이가 있어야 검색 후 위치 조정이 편하다.
+                            LocationPickerPanel(
+                                initialQuery = draft.locationText,
+                                kakaoRestApiKey = kakaoRestApiKey,
+                                onLocationSelected = { location ->
+                                    locationAutofilled = false
+                                    draft = draft.copy(
+                                        locationText = location.addressText,
+                                        locationLatitude = location.latitude,
+                                        locationLongitude = location.longitude,
+                                        locationSource = location.source
+                                    )
+                                    showLocationPickerDialog = false
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun ReportTypeSelector(
+    selectedType: String,
+    onClick: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("신고 유형", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(
+            text = selectedType.ifBlank { "신고 유형을 선택해주세요." },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 21.sp
+        )
+        SecondaryActionButton(
+            text = if (selectedType.isBlank()) "신고 유형 선택" else "신고 유형 변경",
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun ReportTypeDialog(
+    selectedType: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("신고 유형 선택") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SubmissionReportType.Options.forEach { type ->
+                    SegmentedTabButton(
+                        text = type,
+                        selected = type == selectedType,
+                        onClick = { onSelect(type) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            SecondaryActionButton(text = "취소", onClick = onDismiss)
+        }
+    )
 }
 
 @Composable
@@ -616,6 +765,14 @@ private fun IncidentDateTimeInputs(
 ) {
     val context = LocalContext.current
     val calendar = remember { Calendar.getInstance() }
+    val dateWarningMessage = SubmissionIncidentDateTimeFields.warningMessage(fields.date)
+    val today = remember { LocalDate.now() }
+    val selectableStartCalendar = remember(today) {
+        SubmissionIncidentDateTimeFields.selectableStartDate(today).toCalendarAtStartOfDay()
+    }
+    val selectableEndCalendar = remember(today) {
+        SubmissionIncidentDateTimeFields.selectableEndDate(today).toCalendarAtEndOfDay()
+    }
     val datePicker = remember(fields) {
         DatePickerDialog(
             context,
@@ -633,7 +790,10 @@ private fun IncidentDateTimeInputs(
             calendar.get(Calendar.YEAR),
             calendar.get(Calendar.MONTH),
             calendar.get(Calendar.DAY_OF_MONTH)
-        )
+        ).apply {
+            datePicker.minDate = selectableStartCalendar.timeInMillis
+            datePicker.maxDate = selectableEndCalendar.timeInMillis
+        }
     }
     val timePicker = remember(fields) {
         TimePickerDialog(
@@ -657,12 +817,21 @@ private fun IncidentDateTimeInputs(
             onValueChange = {
                 onFieldsChange(fields.copy(date = SubmissionIncidentDateTimeFields.sanitizeDate(it)))
             },
+            isError = dateWarningMessage != null,
             label = { Text("사고 날짜") },
             modifier = Modifier.weight(1f)
         )
         SecondaryActionButton(
             text = "달력",
             onClick = { datePicker.show() }
+        )
+    }
+    if (dateWarningMessage != null) {
+        Text(
+            text = dateWarningMessage,
+            color = MaterialTheme.colorScheme.error,
+            fontSize = 12.sp,
+            lineHeight = 17.sp
         )
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -678,6 +847,20 @@ private fun IncidentDateTimeInputs(
             text = "시간",
             onClick = { timePicker.show() }
         )
+    }
+}
+
+private fun LocalDate.toCalendarAtStartOfDay(): Calendar {
+    return Calendar.getInstance().apply {
+        set(year, monthValue - 1, dayOfMonth, 0, 0, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+}
+
+private fun LocalDate.toCalendarAtEndOfDay(): Calendar {
+    return Calendar.getInstance().apply {
+        set(year, monthValue - 1, dayOfMonth, 23, 59, 59)
+        set(Calendar.MILLISECOND, 999)
     }
 }
 

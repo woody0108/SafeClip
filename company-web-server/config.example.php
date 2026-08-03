@@ -6,4 +6,5 @@ return [
     'storage_dir' => '/volume1/SafeClipUpLoads',
     'sample_video_dir' => '/volume1/SafeClipUpLoads',
     'max_submissions' => 50,
+    'kakao_map_javascript_key' => '',
 ];

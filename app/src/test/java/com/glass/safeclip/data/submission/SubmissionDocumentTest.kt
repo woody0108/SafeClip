@@ -24,6 +24,10 @@ class SubmissionDocumentTest {
     private val draft = SubmissionDraft(
         incidentDateTime = "2026.07.15 14:20",
         locationText = "서울 강남구 테헤란로",
+        locationDetail = "3차로 버스정류장 앞",
+        locationLatitude = 37.5012,
+        locationLongitude = 127.0396,
+        locationSource = "map_selected",
         incidentType = "추돌 사고",
         memo = "급정거 후 추돌",
         reviewConsent = true,
@@ -46,6 +50,10 @@ class SubmissionDocumentTest {
         assertEquals("2026.07.15", fields["incidentDate"])
         assertEquals("14:20", fields["incidentTime"])
         assertEquals("서울 강남구 테헤란로", fields["incidentLocation"])
+        assertEquals("3차로 버스정류장 앞", fields["incidentLocationDetail"])
+        assertEquals(37.5012, fields["incidentLatitude"])
+        assertEquals(127.0396, fields["incidentLongitude"])
+        assertEquals("map_selected", fields["incidentLocationSource"])
         assertEquals("추돌 사고", fields["reportType"])
         assertEquals("급정거 후 추돌", fields["reportMemo"])
         assertEquals("", fields["companyComment"])

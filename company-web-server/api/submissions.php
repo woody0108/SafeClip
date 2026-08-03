@@ -17,6 +17,7 @@ if ((string)($_GET['mode'] ?? '') === 'sample') {
         'mode' => 'sample_folder',
         'sampleFolder' => sample_folder_diagnostics($config, count($submissions)),
         'submissions' => $submissions,
+        'kakaoMapJavascriptKey' => (string)($config['kakao_map_javascript_key'] ?? ''),
     ];
     save_json_cache('submissions-cache.json', $response);
     json_success($response);
@@ -59,6 +60,10 @@ foreach ($payload as $row) {
         'incidentDate' => $fields['incidentDate'] ?? '',
         'incidentTime' => $fields['incidentTime'] ?? '',
         'incidentLocation' => $fields['incidentLocation'] ?? '',
+        'incidentLocationDetail' => $fields['incidentLocationDetail'] ?? '',
+        'incidentLatitude' => $fields['incidentLatitude'] ?? null,
+        'incidentLongitude' => $fields['incidentLongitude'] ?? null,
+        'incidentLocationSource' => $fields['incidentLocationSource'] ?? '',
         'reportType' => $fields['reportType'] ?? '',
         'reportMemo' => $fields['reportMemo'] ?? '',
         'companyComment' => $fields['companyComment'] ?? '',
@@ -74,7 +79,11 @@ foreach ($payload as $row) {
     ];
 }
 
-$response = ['mode' => 'firestore', 'submissions' => $submissions];
+$response = [
+    'mode' => 'firestore',
+    'submissions' => $submissions,
+    'kakaoMapJavascriptKey' => (string)($config['kakao_map_javascript_key'] ?? ''),
+];
 save_json_cache('submissions-cache.json', $response);
 json_success($response);
 
@@ -137,6 +146,10 @@ function sample_submissions_from_folder(array $config, int $limit): array
             'ownerDisplayName' => 'NAS 샘플 폴더',
             'submitterLabel' => 'NAS 샘플 폴더',
             'incidentLocation' => '\\\\SyDisk\\SafeClipUpLoads',
+            'incidentLocationDetail' => '',
+            'incidentLatitude' => null,
+            'incidentLongitude' => null,
+            'incidentLocationSource' => '',
             'reportType' => '샘플 영상',
             'reportMemo' => 'NAS SafeClipUpLoads 폴더에서 읽은 파일입니다.',
             'companyComment' => '',

@@ -350,6 +350,40 @@ dd {
   overflow-wrap: anywhere;
 }
 
+.map-section {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.section-title {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.section-title h3 {
+  margin: 0;
+}
+
+.detail-map {
+  width: 100%;
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #07111f;
+  overflow: hidden;
+}
+
+.map-message {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;

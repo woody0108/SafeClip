@@ -8,6 +8,7 @@ const state = {
   submissionFilter: 'all',
   askFilter: 'all',
   view: 'review',
+  kakaoMapJavascriptKey: '',
 };
 
 const listEl = document.querySelector('#submission-list');
@@ -29,6 +30,13 @@ const askFilterButtons = Array.from(document.querySelectorAll('[data-ask-filter]
 const askListEl = document.querySelector('#ask-list');
 const askAnswerInput = document.querySelector('#ask-answer-input');
 const askSaveButton = document.querySelector('#ask-save-button');
+const detailMapEl = document.querySelector('#detail-map');
+const detailMapMessageEl = document.querySelector('#detail-map-message');
+
+let detailMap = null;
+let detailMapMarker = null;
+let detailMapGeocoder = null;
+let kakaoMapLoadingPromise = null;
 
 const statuses = ['검토 대기 중', '검토 완료', '보완 요청', '신고 완료', '신고 결과'];
 
@@ -106,6 +114,7 @@ async function loadSubmissions() {
     }
 
     state.submissions = payload.submissions || [];
+    state.kakaoMapJavascriptKey = payload.kakaoMapJavascriptKey || state.kakaoMapJavascriptKey || '';
     state.selectedId = filteredSubmissions()[0]?.id || null;
     state.selectedFileIndex = 0;
     render();
@@ -256,6 +265,7 @@ function renderSelected() {
   document.querySelector('#detail-submitted').textContent = selected?.submittedAtText || '-';
   document.querySelector('#detail-incident-time').textContent = incidentDateTime(selected);
   document.querySelector('#detail-location').textContent = selected?.incidentLocation || '-';
+  document.querySelector('#detail-location-detail').textContent = selected?.incidentLocationDetail || '-';
   document.querySelector('#detail-type').textContent = selected?.reportType || '-';
   document.querySelector('#detail-file').textContent = attachment?.displayName || '-';
   document.querySelector('#detail-size').textContent = fileSizeLabel(attachment?.uploadedSizeBytes || attachment?.sizeBytes);
@@ -268,6 +278,101 @@ function renderSelected() {
   statusEl.textContent = labels[status] || status;
 
   renderMedia(selected, attachment);
+  renderDetailMap(selected);
+}
+
+async function renderDetailMap(selected) {
+  if (!detailMapEl || !detailMapMessageEl) return;
+  detailMapMessageEl.textContent = '지도를 준비하는 중입니다.';
+
+  if (!selected) {
+    detailMapMessageEl.textContent = '제출을 선택하면 지도를 표시합니다.';
+    return;
+  }
+  if (!state.kakaoMapJavascriptKey) {
+    detailMapMessageEl.textContent = 'config.php에 kakao_map_javascript_key를 설정하면 지도를 표시합니다.';
+    return;
+  }
+
+  try {
+    await loadKakaoMapSdk();
+    const explicitPosition = submissionLatLng(selected);
+    if (explicitPosition) {
+      showDetailMap(explicitPosition, '저장된 좌표로 신고 위치를 표시합니다.');
+      return;
+    }
+
+    const address = selected.incidentLocation || '';
+    if (!address) {
+      detailMapMessageEl.textContent = '표시할 위치 정보가 없습니다.';
+      return;
+    }
+
+    geocodeAddress(address, (position) => {
+      if (!position) {
+        detailMapMessageEl.textContent = '주소로 지도 위치를 찾지 못했습니다.';
+        return;
+      }
+      showDetailMap(position, '주소를 좌표로 변환해 신고 위치를 표시합니다.');
+    });
+  } catch (error) {
+    detailMapMessageEl.textContent = error.message || '카카오 지도를 불러오지 못했습니다.';
+  }
+}
+
+function loadKakaoMapSdk() {
+  if (window.kakao?.maps) {
+    return new Promise((resolve) => window.kakao.maps.load(resolve));
+  }
+  if (kakaoMapLoadingPromise) return kakaoMapLoadingPromise;
+
+  kakaoMapLoadingPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(state.kakaoMapJavascriptKey)}&autoload=false&libraries=services`;
+    script.onload = () => window.kakao.maps.load(resolve);
+    script.onerror = () => reject(new Error('카카오 지도 SDK를 불러오지 못했습니다.'));
+    document.head.appendChild(script);
+  });
+  return kakaoMapLoadingPromise;
+}
+
+function submissionLatLng(selected) {
+  const lat = Number(selected?.incidentLatitude);
+  const lng = Number(selected?.incidentLongitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return new window.kakao.maps.LatLng(lat, lng);
+}
+
+function geocodeAddress(address, callback) {
+  detailMapGeocoder = detailMapGeocoder || new window.kakao.maps.services.Geocoder();
+  detailMapGeocoder.addressSearch(address, (result, status) => {
+    if (status !== window.kakao.maps.services.Status.OK || !result.length) {
+      callback(null);
+      return;
+    }
+    callback(new window.kakao.maps.LatLng(Number(result[0].y), Number(result[0].x)));
+  });
+}
+
+function showDetailMap(position, message) {
+  if (!detailMap) {
+    detailMap = new window.kakao.maps.Map(detailMapEl, {
+      center: position,
+      level: 3,
+    });
+    detailMapMarker = new window.kakao.maps.Marker({
+      map: detailMap,
+      position,
+    });
+  } else {
+    detailMap.setCenter(position);
+    detailMapMarker.setPosition(position);
+  }
+  setTimeout(() => {
+    detailMap.relayout();
+    detailMap.setCenter(position);
+  }, 0);
+  detailMapMessageEl.textContent = message;
 }
 
 function renderFileTabs() {

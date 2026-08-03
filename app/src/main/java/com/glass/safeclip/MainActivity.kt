@@ -93,6 +93,7 @@ import com.glass.safeclip.ui.video.VideoBrowserScreen
 import com.glass.safeclip.ui.video.VideoBrowserSource
 import com.glass.safeclip.ui.video.VideoListState
 import com.glass.safeclip.ui.video.VideoPreviewScreen
+import com.kakao.vectormap.KakaoMapSdk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,6 +103,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.SAFECLIP_KAKAO_NATIVE_APP_KEY.isNotBlank()) {
+            KakaoMapSdk.init(this, BuildConfig.SAFECLIP_KAKAO_NATIVE_APP_KEY)
+        }
         enableEdgeToEdge()
 
         val source = AndroidDocumentTreeVideoSource(this)
@@ -1017,6 +1021,8 @@ class MainActivity : ComponentActivity() {
                         eventFiles = currentScreen.eventFiles,
                         uploadProgress = nasUploadProgress,
                         uploadFailureMessage = nasUploadFailureMessage,
+                        kakaoMapNativeAppKey = BuildConfig.SAFECLIP_KAKAO_NATIVE_APP_KEY,
+                        kakaoRestApiKey = BuildConfig.SAFECLIP_KAKAO_REST_API_KEY,
                         onLoadRepresentativeMetadata = { attachment ->
                             submissionMetadataReader.read(attachment)
                         },

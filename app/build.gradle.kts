@@ -39,6 +39,16 @@ android {
             "SAFECLIP_NAS_UPLOAD_KEY",
             "\"${localProperties.getProperty("safeclip.nasUploadKey", "")}\""
         )
+        buildConfigField(
+            "String",
+            "SAFECLIP_KAKAO_NATIVE_APP_KEY",
+            "\"${localProperties.getProperty("safeclip.kakaoNativeAppKey", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "SAFECLIP_KAKAO_REST_API_KEY",
+            "\"${localProperties.getProperty("safeclip.kakaoRestApiKey", "")}\""
+        )
     }
 
     buildTypes {
@@ -74,6 +84,7 @@ dependencies {
     implementation(libs.androidx.media3.transformer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.googleid)
+    implementation(libs.kakao.map)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)

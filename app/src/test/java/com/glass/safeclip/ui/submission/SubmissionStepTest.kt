@@ -23,13 +23,23 @@ class SubmissionStepTest {
     }
 
     @Test
-    fun detailsStepCanOpenConsentWhenIncidentInfoIsComplete() {
+    fun detailsStepCanOpenConsentWhenAttachmentsAreValid() {
         assertTrue(SubmissionStep.Details.canContinue(readyDraftWithoutConsent(), listOf(attachment())))
     }
 
     @Test
-    fun detailsStepCannotOpenConsentWhenIncidentInfoIsMissing() {
-        assertFalse(SubmissionStep.Details.canContinue(SubmissionDraft(), listOf(attachment())))
+    fun detailsStepCanOpenConsentWhenIncidentInfoIsMissing() {
+        assertTrue(SubmissionStep.Details.canContinue(SubmissionDraft(), listOf(attachment())))
+    }
+
+    @Test
+    fun detailsStepCannotOpenConsentWhenAttachmentsAreInvalid() {
+        assertFalse(
+            SubmissionStep.Details.canContinue(
+                SubmissionDraft(),
+                listOf(attachment(sizeBytes = 501L * 1024L * 1024L))
+            )
+        )
     }
 
     private fun readyDraftWithoutConsent(): SubmissionDraft {

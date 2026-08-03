@@ -31,15 +31,20 @@ class AndroidSubmissionMetadataReader(
         val dateTime = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
             ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
         val latLong = FloatArray(2)
-        val locationText = if (exif.getLatLong(latLong)) {
-            roadLocationText(latLong[0].toDouble(), latLong[1].toDouble())
+        val location = if (exif.getLatLong(latLong)) {
+            MetadataLocation(
+                text = roadLocationText(latLong[0].toDouble(), latLong[1].toDouble()),
+                latitude = latLong[0].toDouble(),
+                longitude = latLong[1].toDouble()
+            )
         } else {
             null
         }
 
         return metadataOrNull(
-            dateTime = formatPhotoDate(dateTime),
-            locationText = locationText
+            dateTime = formatPhotoDate(dateTime)
+                ?: SubmissionFileNameMetadata.dateTimeFromFileName(attachment.displayName),
+            location = location
         )
     }
 
@@ -49,12 +54,17 @@ class AndroidSubmissionMetadataReader(
             retriever.setDataSource(context, Uri.parse(attachment.uriString))
             val dateTime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
             val location = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)
-            val locationText = parseVideoLocation(location)?.let { (latitude, longitude) ->
-                roadLocationText(latitude, longitude)
+            val metadataLocation = parseVideoLocation(location)?.let { (latitude, longitude) ->
+                MetadataLocation(
+                    text = roadLocationText(latitude, longitude),
+                    latitude = latitude,
+                    longitude = longitude
+                )
             }
             metadataOrNull(
-                dateTime = formatVideoDate(dateTime),
-                locationText = locationText
+                dateTime = formatVideoDate(dateTime)
+                    ?: SubmissionFileNameMetadata.dateTimeFromFileName(attachment.displayName),
+                location = metadataLocation
             )
         } catch (_: Exception) {
             null
@@ -63,11 +73,14 @@ class AndroidSubmissionMetadataReader(
         }
     }
 
-    private fun metadataOrNull(dateTime: String?, locationText: String?): SubmissionFileMetadata? {
-        if (dateTime.isNullOrBlank() && locationText.isNullOrBlank()) return null
+    private fun metadataOrNull(dateTime: String?, location: MetadataLocation?): SubmissionFileMetadata? {
+        if (dateTime.isNullOrBlank() && location?.text.isNullOrBlank()) return null
         return SubmissionFileMetadata(
             incidentDateTimeText = dateTime,
-            locationText = locationText
+            locationText = location?.text,
+            locationLatitude = location?.latitude,
+            locationLongitude = location?.longitude,
+            locationSource = if (location == null) "" else "file_metadata"
         )
     }
 
@@ -123,4 +136,10 @@ class AndroidSubmissionMetadataReader(
         }
         return String.format(Locale.US, "%.6f, %.6f", latitude, longitude)
     }
+
+    private data class MetadataLocation(
+        val text: String,
+        val latitude: Double,
+        val longitude: Double
+    )
 }
