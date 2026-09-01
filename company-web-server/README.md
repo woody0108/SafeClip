@@ -2,6 +2,18 @@
 
 이 폴더는 NAS Web Station에 올리는 회사 관리자 웹입니다.
 
+## 로컬 PC 실행
+
+`config.php`에서 `storage_dir`, `sample_video_dir`, `ai_exchange_dir`를 이 PC 경로로 설정한 뒤 실행합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start-LocalServer.ps1
+```
+
+기본 NAS 연동 화면은 `http://127.0.0.1:8080/`입니다. `http://127.0.0.1:8080/?mode=sample`은 Desktop 테스트 파일만 확인하는 별도 샘플 모드입니다. 실제 NAS에서는 기존 Firestore 설정을 유지하고 `ai_exchange_dir`만 `/volume1/SafeClipAI`로 추가합니다.
+
+PC에서 기존 NAS 관리 목록을 그대로 볼 때는 로컬 `config.php`에 `'upstream_company_web_url' => 'http://192.168.0.3:8080'`을 설정합니다. 이 경우 제출 목록과 영상은 NAS 서버에서 읽고 AI 요청과 결과 화면은 PC에서 처리합니다.
+
 이 웹서버가 하는 일은 세 가지뿐입니다.
 
 1. Firestore `submissions` 문서 목록 보기

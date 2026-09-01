@@ -29,7 +29,10 @@
           <p class="eyebrow">Dashboard</p>
           <h1>제출 영상 검토</h1>
         </div>
-        <button id="refresh-button" class="ghost-button" type="button">새로고침</button>
+        <div class="topbar-actions">
+          <span id="operation-mode" class="operation-mode">연결 확인 중</span>
+          <button id="refresh-button" class="ghost-button" type="button">새로고침</button>
+        </div>
       </header>
 
       <section id="review-view">
@@ -117,6 +120,41 @@
             <img id="review-image" alt="제출 사진">
             <div id="video-placeholder" class="video-placeholder">제출 목록에서 영상을 선택하세요.</div>
           </div>
+
+          <section id="ai-analysis-section" class="ai-analysis-section" aria-label="AI 영상 분석">
+            <div class="ai-analysis-heading">
+              <div>
+                <p class="eyebrow">AI Analysis</p>
+                <h3>영상 분석 결과</h3>
+              </div>
+              <button id="ai-analysis-button" class="primary-button ai-analysis-button" type="button" disabled>AI 분석</button>
+            </div>
+            <p id="ai-analysis-status" class="ai-analysis-status">분석할 비디오를 선택하세요.</p>
+            <div id="ai-result-panel" class="ai-result-panel hidden">
+              <dl class="ai-result-summary">
+                <div>
+                  <dt>추천 번호판</dt>
+                  <dd id="ai-plate-recommendation">-</dd>
+                </div>
+                <div>
+                  <dt>신뢰도</dt>
+                  <dd id="ai-plate-confidence">-</dd>
+                </div>
+                <div class="wide">
+                  <dt>판단</dt>
+                  <dd id="ai-judgment">-</dd>
+                </div>
+              </dl>
+              <div>
+                <p class="ai-result-label">번호판 후보</p>
+                <ol id="ai-plate-candidates" class="ai-plate-candidates"></ol>
+              </div>
+              <div>
+                <p class="ai-result-label">근거 사진</p>
+                <div id="ai-evidence" class="ai-evidence"></div>
+              </div>
+            </div>
+          </section>
 
           <dl class="detail-grid">
             <div>

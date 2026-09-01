@@ -20,14 +20,14 @@ class UserProfileDocumentTest {
     }
 
     @Test
-    fun firstSaveIncludesCreatedAtAndLastLoginAt() {
+    fun firstSaveIncludesCreatedAtAndLastLoginAtWithoutGuestId() {
         val profile = UserProfile("uid-123", "Guest-ABCD-1234", "safeclip@example.com", "SafeClip", "google")
 
         val fields = UserProfileDocument.createFields(profile)
 
         assertTrue(fields.containsKey("createdAt"))
         assertTrue(fields.containsKey("lastLoginAt"))
-        assertEquals("Guest-ABCD-1234", fields["guestId"])
+        assertFalse(fields.containsKey("guestId"))
     }
 
     @Test
@@ -38,6 +38,7 @@ class UserProfileDocumentTest {
 
         assertFalse(fields.containsKey("createdAt"))
         assertTrue(fields.containsKey("lastLoginAt"))
+        assertFalse(fields.containsKey("guestId"))
         assertEquals("google", fields["provider"])
     }
 }

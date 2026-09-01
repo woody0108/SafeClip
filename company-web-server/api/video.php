@@ -8,21 +8,34 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     json_fail(405, 'Only GET is allowed.');
 }
 
-$id = clean_document_id((string)($_GET['id'] ?? ''));
-if ($id === '') {
+$rawId = trim((string)($_GET['id'] ?? ''));
+if ($rawId === '') {
     json_fail(400, 'Invalid video request.');
 }
 
 $config = app_config();
 $samplePrefix = 'sample-';
-if (str_starts_with($id, $samplePrefix)) {
-    $sampleName = clean_relative_path(rawurldecode(substr($id, strlen($samplePrefix))));
+if (str_starts_with($rawId, $samplePrefix)) {
+    $sampleName = sample_relative_path_from_id($rawId);
     $samplePath = resolve_video_file_path($config, $sampleName);
-    if ($samplePath === '' || !is_file($samplePath)) {
+    if ($sampleName === '' || $samplePath === '' || !is_file($samplePath)) {
         json_fail(404, 'Sample video file was not found.');
     }
 
     stream_video($samplePath, mime_for_extension(strtolower(pathinfo($samplePath, PATHINFO_EXTENSION))));
+}
+
+$id = clean_document_id($rawId);
+if ($id === '') {
+    json_fail(400, 'Invalid video request.');
+}
+
+if (company_web_upstream_url($config) !== '') {
+    $query = http_build_query([
+        'id' => $id,
+        'file' => max(0, (int)($_GET['file'] ?? 0)),
+    ]);
+    proxy_upstream_video(company_web_upstream_url($config) . '/api/video.php?' . $query);
 }
 
 $document = firestore_request($config, 'GET', '/submissions/' . rawurlencode($id));
@@ -40,6 +53,51 @@ if ($filePath === '') {
 }
 
 stream_video($filePath, mime_for_extension(strtolower(pathinfo($filePath, PATHINFO_EXTENSION))));
+
+function proxy_upstream_video(string $url): void
+{
+    $headers = [];
+    if (isset($_SERVER['HTTP_RANGE'])) {
+        $headers[] = 'Range: ' . (string)$_SERVER['HTTP_RANGE'];
+    }
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => implode("\r\n", $headers),
+            'timeout' => 60,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $handle = @fopen($url, 'rb', false, $context);
+    if ($handle === false) {
+        json_fail(502, 'Could not open upstream NAS video.');
+    }
+
+    $status = 200;
+    $forwardHeaders = [];
+    foreach ((array)($http_response_header ?? []) as $header) {
+        if (preg_match('/^HTTP\/\S+\s+(\d{3})/', (string)$header, $matches)) {
+            $status = (int)$matches[1];
+            continue;
+        }
+        if (preg_match('/^(Content-Type|Content-Length|Content-Range|Accept-Ranges):/i', (string)$header)) {
+            $forwardHeaders[] = (string)$header;
+        }
+    }
+
+    if ($status >= 400) {
+        fclose($handle);
+        json_fail($status, 'Upstream NAS video request failed.');
+    }
+    http_response_code($status);
+    foreach ($forwardHeaders as $header) {
+        header($header);
+    }
+    header('Content-Disposition: inline');
+    fpassthru($handle);
+    fclose($handle);
+    exit;
+}
 
 function stream_video(string $filePath, string $mimeType): void
 {

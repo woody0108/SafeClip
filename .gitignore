@@ -17,4 +17,8 @@ admin-web/node_modules/
 admin-web/dist/
 admin-web/.env.local
 nas-upload-api/config.php
+company-web-server/config.php
+company-web-server/.local-server.pid
+company-web-server/data/*.json
 .worktrees/
+device-test-artifacts/*.mp4

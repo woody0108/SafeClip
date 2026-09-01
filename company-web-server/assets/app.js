@@ -9,6 +9,11 @@ const state = {
   askFilter: 'all',
   view: 'review',
   kakaoMapJavascriptKey: '',
+  analysis: { status: 'idle' },
+  analysisSelectionKey: '',
+  videoBaseUrl: 'api/video.php',
+  upstreamMode: false,
+  previewBaseUrl: '',
 };
 
 const listEl = document.querySelector('#submission-list');
@@ -32,11 +37,19 @@ const askAnswerInput = document.querySelector('#ask-answer-input');
 const askSaveButton = document.querySelector('#ask-save-button');
 const detailMapEl = document.querySelector('#detail-map');
 const detailMapMessageEl = document.querySelector('#detail-map-message');
+const operationModeEl = document.querySelector('#operation-mode');
+const analysisButton = document.querySelector('#ai-analysis-button');
+const analysisStatusEl = document.querySelector('#ai-analysis-status');
+const analysisResultPanel = document.querySelector('#ai-result-panel');
+const analysisCandidatesEl = document.querySelector('#ai-plate-candidates');
+const analysisEvidenceEl = document.querySelector('#ai-evidence');
 
 let detailMap = null;
 let detailMapMarker = null;
 let detailMapGeocoder = null;
 let kakaoMapLoadingPromise = null;
+let analysisPollTimer = null;
+const isSampleMode = new URLSearchParams(window.location.search).get('mode') === 'sample';
 
 const statuses = ['검토 대기 중', '검토 완료', '보완 요청', '신고 완료', '신고 결과'];
 
@@ -52,6 +65,7 @@ refreshButton.addEventListener('click', refreshCurrentView);
 reviewNav.addEventListener('click', () => switchView('review'));
 askNav.addEventListener('click', () => switchView('ask'));
 askSaveButton.addEventListener('click', saveSelectedAskAnswer);
+analysisButton.addEventListener('click', requestSelectedAnalysis);
 fileTabButtons.forEach((button) => {
   button.addEventListener('click', () => {
     state.fileFilter = button.dataset.fileFilter || 'all';
@@ -76,7 +90,6 @@ askFilterButtons.forEach((button) => {
 });
 
 loadSubmissions();
-loadAsks();
 
 function refreshCurrentView() {
   if (state.view === 'ask') {
@@ -106,7 +119,7 @@ async function loadSubmissions() {
   listEl.innerHTML = '';
 
   try {
-    const response = await fetch('api/submissions.php');
+    const response = await fetch(isSampleMode ? 'api/submissions.php?mode=sample' : 'api/submissions.php');
     const payload = await response.json();
 
     if (!payload.ok) {
@@ -115,6 +128,12 @@ async function loadSubmissions() {
 
     state.submissions = payload.submissions || [];
     state.kakaoMapJavascriptKey = payload.kakaoMapJavascriptKey || state.kakaoMapJavascriptKey || '';
+    state.videoBaseUrl = payload.videoBaseUrl || 'api/video.php';
+    state.upstreamMode = payload.mode === 'upstream';
+    state.previewBaseUrl = payload.previewBaseUrl || '';
+    operationModeEl.textContent = payload.mode === 'upstream'
+      ? 'NAS 연동 · PC AI'
+      : payload.mode === 'sample_folder' ? '로컬 샘플' : 'NAS 서버';
     state.selectedId = filteredSubmissions()[0]?.id || null;
     state.selectedFileIndex = 0;
     render();
@@ -124,6 +143,7 @@ async function loadSubmissions() {
     } else {
       setMessage(`Firestore 문서 ${state.submissions.length}개를 JSON으로 불러왔습니다.`);
     }
+    if (!isSampleMode && !state.upstreamMode) loadAsks();
   } catch (error) {
     state.submissions = [];
     state.selectedId = null;
@@ -134,6 +154,19 @@ async function loadSubmissions() {
 }
 
 async function loadAsks() {
+  if (state.upstreamMode) {
+    state.asks = [];
+    state.selectedAskDocumentId = null;
+    renderAsks();
+    return;
+  }
+  if (isSampleMode) {
+    state.asks = [];
+    state.selectedAskDocumentId = null;
+    renderAsks();
+    setMessage('샘플 모드에서는 문의 목록을 불러오지 않습니다.');
+    return;
+  }
   setMessage('문의 목록을 불러오는 중입니다.');
   try {
     const response = await fetch('api/asks.php');
@@ -278,7 +311,132 @@ function renderSelected() {
   statusEl.textContent = labels[status] || status;
 
   renderMedia(selected, attachment);
+  syncAnalysisSelection(selected, attachment);
+  renderAnalysis(selected, attachment);
   renderDetailMap(selected);
+}
+
+function syncAnalysisSelection(selected, attachment) {
+  const nextKey = selected && attachment ? `${selected.id}:${attachment.index}` : '';
+  if (nextKey === state.analysisSelectionKey) return;
+
+  clearTimeout(analysisPollTimer);
+  analysisPollTimer = null;
+  state.analysisSelectionKey = nextKey;
+  state.analysis = { status: 'idle' };
+  if (selected && attachment?.kind === 'video' && attachment.exists) {
+    loadAnalysisStatus(nextKey);
+  }
+}
+
+async function loadAnalysisStatus(expectedKey = state.analysisSelectionKey) {
+  const selected = selectedSubmission();
+  const attachment = selectedAttachment(selected);
+  if (!selected || !attachment || `${selected.id}:${attachment.index}` !== expectedKey) return;
+
+  try {
+    const query = new URLSearchParams({ id: selected.id, file: String(attachment.index) });
+    const response = await fetch(`api/analysis.php?${query}`);
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || 'AI 분석 상태를 불러오지 못했습니다.');
+    if (state.analysisSelectionKey !== expectedKey) return;
+    state.analysis = payload.analysis || { status: 'idle' };
+  } catch (error) {
+    if (state.analysisSelectionKey !== expectedKey) return;
+    state.analysis = { status: 'failed', errorMessage: error.message || 'AI 분석 상태를 불러오지 못했습니다.' };
+  }
+
+  renderAnalysis(selectedSubmission(), selectedAttachment(selectedSubmission()));
+  scheduleAnalysisPoll(expectedKey);
+}
+
+function scheduleAnalysisPoll(expectedKey) {
+  clearTimeout(analysisPollTimer);
+  analysisPollTimer = null;
+  if (!['pending', 'running'].includes(state.analysis.status)) return;
+  analysisPollTimer = setTimeout(() => loadAnalysisStatus(expectedKey), 3000);
+}
+
+async function requestSelectedAnalysis() {
+  const selected = selectedSubmission();
+  const attachment = selectedAttachment(selected);
+  if (!selected || attachment?.kind !== 'video' || !attachment.exists) return;
+
+  const expectedKey = `${selected.id}:${attachment.index}`;
+  state.analysis = { status: 'pending' };
+  renderAnalysis(selected, attachment);
+  try {
+    const response = await fetch('api/analysis.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: selected.id, file: attachment.index }),
+    });
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || 'AI 분석 요청에 실패했습니다.');
+    if (state.analysisSelectionKey !== expectedKey) return;
+    state.analysis = payload.analysis || { status: 'pending' };
+  } catch (error) {
+    if (state.analysisSelectionKey !== expectedKey) return;
+    state.analysis = { status: 'failed', errorMessage: error.message || 'AI 분석 요청에 실패했습니다.' };
+  }
+  renderAnalysis(selectedSubmission(), selectedAttachment(selectedSubmission()));
+  scheduleAnalysisPoll(expectedKey);
+}
+
+function renderAnalysis(selected, attachment) {
+  const eligible = Boolean(selected && attachment?.kind === 'video' && attachment.exists);
+  const status = eligible ? state.analysis.status || 'idle' : 'unavailable';
+  const statusLabels = {
+    unavailable: '분석할 비디오를 선택하세요.',
+    idle: '아직 분석하지 않은 영상입니다.',
+    pending: 'PC 분석 대기열에 등록되었습니다.',
+    running: 'PC에서 영상을 분석하고 있습니다.',
+    completed: 'AI 분석이 완료되었습니다. 최종 판단 전 근거 영상을 확인하세요.',
+    failed: state.analysis.errorMessage || 'AI 분석에 실패했습니다.',
+  };
+  analysisStatusEl.textContent = statusLabels[status] || statusLabels.failed;
+  analysisStatusEl.classList.toggle('warning', status === 'failed');
+  analysisButton.disabled = !eligible || ['pending', 'running'].includes(status);
+  analysisButton.textContent = status === 'completed' || status === 'failed' ? '다시 분석' : 'AI 분석';
+
+  const result = status === 'completed' ? state.analysis.result || {} : null;
+  analysisResultPanel.classList.toggle('hidden', !result);
+  if (!result) return;
+
+  const summary = result.summary || {};
+  document.querySelector('#ai-plate-recommendation').textContent = summary.plateRecommendation || '판독 불가';
+  const confidence = Number(summary.plateConfidence || 0);
+  document.querySelector('#ai-plate-confidence').textContent = `${Math.round(confidence * 100)}%`;
+  document.querySelector('#ai-judgment').textContent = analysisJudgmentLabel(summary.judgment);
+
+  analysisCandidatesEl.innerHTML = '';
+  const candidates = Array.isArray(summary.plateCandidates) ? summary.plateCandidates.slice(0, 3) : [];
+  if (!candidates.length) {
+    const item = document.createElement('li');
+    item.textContent = '판독된 후보가 없습니다.';
+    analysisCandidatesEl.appendChild(item);
+  } else {
+    candidates.forEach((candidate) => {
+      const item = document.createElement('li');
+      item.textContent = `${candidate.text || '?'} · ${Math.round(Number(candidate.confidence || 0) * 100)}%`;
+      analysisCandidatesEl.appendChild(item);
+    });
+  }
+
+  analysisEvidenceEl.innerHTML = '';
+  (state.analysis.evidenceUrls || []).slice(0, 3).forEach((url, index) => {
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = `AI 분석 근거 ${index + 1}`;
+    image.loading = 'lazy';
+    analysisEvidenceEl.appendChild(image);
+  });
+}
+
+function analysisJudgmentLabel(judgment) {
+  if (judgment === 'candidate_available') return '번호판 후보가 확인되었습니다.';
+  if (judgment === 'review_required') return '불확실한 글자가 있어 사람의 검수가 필요합니다.';
+  return '영상에서 번호판을 판독하기 어렵습니다.';
 }
 
 async function renderDetailMap(selected) {
@@ -427,7 +585,9 @@ function renderStatusActions(selected) {
 
 function renderMedia(selected, attachment) {
   if (selected && attachment?.exists) {
-    const mediaUrl = `api/video.php?id=${encodeURIComponent(selected.id)}&file=${encodeURIComponent(attachment.index)}`;
+    const mediaBaseUrl = state.previewBaseUrl || state.videoBaseUrl;
+    const separator = mediaBaseUrl.includes('?') ? '&' : '?';
+    const mediaUrl = `${mediaBaseUrl}${separator}id=${encodeURIComponent(selected.id)}&file=${encodeURIComponent(attachment.index)}`;
     if (attachment.kind === 'photo' || isImagePath(attachment.nasRelativePath)) {
       videoEl.removeAttribute('src');
       videoEl.load();

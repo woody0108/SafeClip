@@ -1,24 +1,19 @@
 package com.glass.safeclip.data.media
 
-import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import com.glass.safeclip.data.file.LastSelectedEventFolderStore
 import java.io.File
 import java.io.FileOutputStream
 
 class AndroidFrameCaptureStore(
     private val context: Context,
-    eventFolderStore: LastSelectedEventFolderStore? = null
+    @Suppress("UNUSED_PARAMETER") eventFolderStore: LastSelectedEventFolderStore? = null,
+    private val mediaPublisher: SafeClipMediaPublisher = AndroidSafeClipMediaPublisher(context)
 ) {
-    private val eventFolder = eventFolderStore?.let { SafeClipEventFolder(context, it) }
-
-    fun captureFrame(videoUri: Uri, displayName: String, positionMs: Long): File {
+    suspend fun captureFrame(videoUri: Uri, displayName: String, positionMs: Long): File {
         val retriever = MediaMetadataRetriever()
         try {
             context.contentResolver.openAssetFileDescriptor(videoUri, "r")?.use { descriptor ->
@@ -53,67 +48,21 @@ class AndroidFrameCaptureStore(
         return null
     }
 
-    private fun saveBitmap(bitmap: Bitmap, displayName: String, positionMs: Long): File {
-        saveBitmapToEventFolder(bitmap, displayName, positionMs)?.let { return it }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            return saveBitmapToMediaStore(bitmap, displayName, positionMs)
-        }
-
-        val directory = File(
-            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-            "captures"
-        )
-        directory.mkdirs()
-
-        val outputFile = File(directory, CaptureFileName.forVideo(displayName, positionMs))
-        FileOutputStream(outputFile).use { stream ->
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)) {
-                error("캡쳐 이미지를 JPEG로 저장하지 못했습니다.")
-            }
-        }
-        return outputFile
-    }
-
-    private fun saveBitmapToEventFolder(bitmap: Bitmap, displayName: String, positionMs: Long): File? {
-        val folder = eventFolder?.loadOrCreate() ?: return null
+    private suspend fun saveBitmap(bitmap: Bitmap, displayName: String, positionMs: Long): File {
         val fileName = CaptureFileName.forVideo(displayName, positionMs)
-        val outputFile = folder.createFile("image/jpeg", fileName) ?: return null
-        context.contentResolver.openOutputStream(outputFile.uri)?.use { stream ->
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)) {
-                error("캡쳐 이미지를 JPEG로 저장하지 못했습니다.")
-            }
-        } ?: return null
-        return File(SafeClipMediaSaveLocation.eventFolderDisplayPath(fileName))
-    }
-
-    private fun saveBitmapToMediaStore(bitmap: Bitmap, displayName: String, positionMs: Long): File {
-        val fileName = CaptureFileName.forVideo(displayName, positionMs)
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, SafeClipMediaSaveLocation.imageCaptureRelativePath)
-            put(MediaStore.Images.Media.IS_PENDING, 1)
-        }
-        val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            ?: error("캡쳐 이미지를 저장할 위치를 만들지 못했습니다.")
-
+        val tempDirectory = File(context.cacheDir ?: context.filesDir, "safeclip-capture-temp")
+            .apply { mkdirs() }
+        val tempFile = File(tempDirectory, fileName)
         try {
-            resolver.openOutputStream(imageUri)?.use { stream ->
+            FileOutputStream(tempFile).use { stream ->
                 if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)) {
                     error("캡쳐 이미지를 JPEG로 저장하지 못했습니다.")
                 }
-            } ?: error("캡쳐 이미지를 저장하지 못했습니다.")
-
-            values.clear()
-            values.put(MediaStore.Images.Media.IS_PENDING, 0)
-            resolver.update(imageUri, values, null, null)
-
-            return File("${SafeClipMediaSaveLocation.imageCaptureRelativePath}/$fileName")
-        } catch (error: Throwable) {
-            resolver.delete(imageUri, null, null)
-            throw error
+            }
+            mediaPublisher.publishImage(tempFile, fileName, "image/jpeg")
+            return File(SafeClipMediaSaveLocation.displayPath(fileName))
+        } finally {
+            tempFile.delete()
         }
     }
 }

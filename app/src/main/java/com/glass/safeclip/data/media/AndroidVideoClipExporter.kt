@@ -1,11 +1,7 @@
 package com.glass.safeclip.data.media
 
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
@@ -17,7 +13,6 @@ import androidx.media3.transformer.Transformer
 import com.glass.safeclip.data.file.LastSelectedEventFolderStore
 import com.glass.safeclip.domain.model.VideoCandidate
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -28,9 +23,9 @@ import kotlinx.coroutines.withContext
 @OptIn(UnstableApi::class)
 class AndroidVideoClipExporter(
     private val context: Context,
-    eventFolderStore: LastSelectedEventFolderStore? = null
+    @Suppress("UNUSED_PARAMETER") eventFolderStore: LastSelectedEventFolderStore? = null,
+    private val mediaPublisher: SafeClipMediaPublisher = AndroidSafeClipMediaPublisher(context)
 ) {
-    private val eventFolder = eventFolderStore?.let { SafeClipEventFolder(context, it) }
 
     suspend fun exportClip(
         video: VideoCandidate,
@@ -156,81 +151,13 @@ class AndroidVideoClipExporter(
         }
     }
 
-    private fun publishClip(tempFile: File, fileName: String): PublishedClip {
-        publishClipToEventFolder(tempFile, fileName)?.let { return it }
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            publishClipToMediaStore(tempFile, fileName)
-        } else {
-            publishClipToAppVisibleFolder(tempFile, fileName)
-        }
-    }
-
-    private fun publishClipToEventFolder(tempFile: File, fileName: String): PublishedClip? {
-        val folder = eventFolder?.loadOrCreate() ?: return null
-        val clipFile = folder.createFile("video/mp4", fileName) ?: return null
-        context.contentResolver.openOutputStream(clipFile.uri)?.use { output ->
-            FileInputStream(tempFile).use { input ->
-                input.copyTo(output)
-            }
-        } ?: return null
-
-        val displayPath = SafeClipMediaSaveLocation.eventFolderDisplayPath(fileName)
+    private suspend fun publishClip(tempFile: File, fileName: String): PublishedClip {
+        val outputUri = mediaPublisher.publishVideo(tempFile, fileName)
+        val displayPath = SafeClipMediaSaveLocation.displayPath(fileName)
         return PublishedClip(
             outputFile = File(displayPath),
-            outputUriString = clipFile.uri.toString(),
+            outputUriString = outputUri.toString(),
             displayPath = displayPath
-        )
-    }
-
-    private fun publishClipToMediaStore(tempFile: File, fileName: String): PublishedClip {
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, SafeClipMediaSaveLocation.videoClipRelativePath)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val clipUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: error("클립 영상을 저장할 위치를 만들지 못했습니다.")
-
-        try {
-            resolver.openOutputStream(clipUri)?.use { output ->
-                FileInputStream(tempFile).use { input ->
-                    input.copyTo(output)
-                }
-            } ?: error("클립 영상을 저장하지 못했습니다.")
-
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(clipUri, values, null, null)
-
-            val displayPath = SafeClipMediaSaveLocation.videoClipDisplayPath(fileName)
-            return PublishedClip(
-                outputFile = File(displayPath),
-                outputUriString = clipUri.toString(),
-                displayPath = displayPath
-            )
-        } catch (error: Throwable) {
-            resolver.delete(clipUri, null, null)
-            throw error
-        }
-    }
-
-    private fun publishClipToAppVisibleFolder(tempFile: File, fileName: String): PublishedClip {
-        val baseDirectory = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
-        val clipDirectory = File(baseDirectory, SafeClipMediaSaveLocation.albumName)
-        clipDirectory.mkdirs()
-        val outputFile = File(clipDirectory, fileName)
-        FileInputStream(tempFile).use { input ->
-            FileOutputStream(outputFile).use { output ->
-                input.copyTo(output)
-            }
-        }
-        return PublishedClip(
-            outputFile = outputFile,
-            outputUriString = Uri.fromFile(outputFile).toString(),
-            displayPath = outputFile.absolutePath
         )
     }
 

@@ -11,6 +11,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.UserProfileChangeRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -45,8 +46,18 @@ class FirebaseAuthConnector(
         }
     }
 
-    suspend fun signUpWithEmail(email: String, password: String): AuthConnectionResult = withContext(Dispatchers.Main) {
-        val input = EmailAuthInput.create(email = email, password = password)
+    suspend fun signUpWithEmail(
+        displayName: String,
+        email: String,
+        password: String,
+        passwordConfirmation: String
+    ): AuthConnectionResult = withContext(Dispatchers.Main) {
+        val input = EmailAuthInput.create(
+            displayName = displayName,
+            email = email,
+            password = password,
+            passwordConfirmation = passwordConfirmation
+        )
         input.errorMessage?.let { message ->
             return@withContext AuthConnectionResult.Failed(message)
         }
@@ -59,10 +70,36 @@ class FirebaseAuthConnector(
         try {
             val authResult = firebaseAuth.createUserWithEmailAndPassword(input.email, input.password).await()
             val user = authResult.user
+            user?.updateProfile(
+                UserProfileChangeRequest.Builder()
+                    .setDisplayName(input.displayName)
+                    .build()
+            )?.await()
             user?.toSignedInResult(providerFallback = "email")
                 ?: AuthConnectionResult.Failed("이메일 가입 사용자 정보를 읽지 못했습니다.")
         } catch (exception: Exception) {
             AuthConnectionResult.Failed(exception.localizedMessage ?: "이메일 가입에 실패했습니다.")
+        }
+    }
+
+    suspend fun signInWithEmail(email: String, password: String): AuthConnectionResult = withContext(Dispatchers.Main) {
+        val input = EmailLoginInput.create(email = email, password = password)
+        input.errorMessage?.let { message ->
+            return@withContext AuthConnectionResult.Failed(message)
+        }
+
+        val firebaseAuth = activity.firebaseAuthOrNull()
+            ?: return@withContext AuthConnectionResult.NeedsFirebaseSetup(
+                "Firebase 설정이 아직 없습니다. google-services.json을 app 폴더에 넣으면 이메일 로그인을 사용할 수 있어요."
+            )
+
+        try {
+            val authResult = firebaseAuth.signInWithEmailAndPassword(input.email, input.password).await()
+            val user = authResult.user
+            user?.toSignedInResult(providerFallback = "email")
+                ?: AuthConnectionResult.Failed("이메일 로그인 사용자 정보를 읽지 못했습니다.")
+        } catch (exception: Exception) {
+            AuthConnectionResult.Failed(exception.localizedMessage ?: "이메일 로그인에 실패했습니다.")
         }
     }
 

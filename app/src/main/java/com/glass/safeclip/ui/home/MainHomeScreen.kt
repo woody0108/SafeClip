@@ -1,8 +1,6 @@
 package com.glass.safeclip.ui.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -11,10 +9,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,9 +30,8 @@ import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
 import com.glass.safeclip.ui.components.SafeClipTopBar
 import com.glass.safeclip.ui.components.SecondaryActionButton
+import com.glass.safeclip.ui.components.TopBarIconButton
 import com.glass.safeclip.ui.folder.FolderViewKind
-import com.glass.safeclip.ui.theme.SafeClipError
-import com.glass.safeclip.ui.theme.SafeClipSuccess
 import com.glass.safeclip.ui.video.VideoListState
 
 @Composable
@@ -42,13 +41,16 @@ fun MainHomeScreen(
     currentFolderFiles: List<ManagedFolderFile>,
     folderPermissionGranted: Boolean,
     cameraPermissionGranted: Boolean,
+    mediaLibraryPermissionGranted: Boolean,
     submissionCount: Int,
     askAnswerCount: Int,
-    onLoadVideos: () -> Unit,
-    onRequestCameraPermission: () -> Unit,
+    onOpenFolderPermissionSettings: () -> Unit,
+    onRequestMediaLibraryPermission: () -> Unit,
     onOpenRecentEvents: () -> Unit,
+    onOpenLiveRecording: () -> Unit,
     onOpenFolder: (FolderViewKind) -> Unit,
     onOpenStatus: () -> Unit,
+    onOpenMyPage: () -> Unit,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -65,6 +67,7 @@ fun MainHomeScreen(
         safeClipPhotoCount = eventFolderSummary.photoCount
     )
     val statusSummary = HomeStatusSummary.from(
+        savedMediaPermissionGranted = mediaLibraryPermissionGranted,
         savedEventVideoCount = eventFolderSummary.videoCount,
         savedEventPhotoCount = eventFolderSummary.photoCount,
         currentFolderVideoCount = currentFolderSummary.videoCount,
@@ -82,7 +85,23 @@ fun MainHomeScreen(
             SafeClipTopBar(
                 subtitle = "블랙박스 이벤트 영상 관리",
                 trailing = {
-                    SecondaryActionButton(text = "뒤로", onClick = onBack)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TopBarIconButton(
+                            icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "뒤로가기",
+                            onClick = onBack
+                        )
+                        TopBarIconButton(
+                            icon = Icons.Rounded.AccountCircle,
+                            contentDescription = "마이페이지",
+                            onClick = onOpenMyPage
+                        )
+                        TopBarIconButton(
+                            icon = Icons.Rounded.Settings,
+                            contentDescription = "설정",
+                            onClick = onOpenSettings
+                        )
+                    }
                 }
             )
 
@@ -102,7 +121,7 @@ fun MainHomeScreen(
                 HomeActionButton(
                     text = importActions.folderButtonText,
                     isPrimary = importActions.folderButtonIsPrimary,
-                    onClick = onLoadVideos,
+                    onClick = onOpenFolderPermissionSettings,
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (importActions.showRecentButton) {
@@ -123,9 +142,16 @@ fun MainHomeScreen(
                 FolderStatusTile(
                     label = "SafeClip 폴더",
                     value = statusSummary.savedEventCountText,
-                    enabled = importActions.eventFolderEnabled,
-                    isPrimary = folderTileActions.safeClipFolderViewIsPrimary,
-                    onOpenFolder = { onOpenFolder(FolderViewKind.SafeClipSaved) },
+                    enabled = true,
+                    isPrimary = !mediaLibraryPermissionGranted || folderTileActions.safeClipFolderViewIsPrimary,
+                    actionText = if (mediaLibraryPermissionGranted) "폴더 보기" else "권한 추가",
+                    onOpenFolder = {
+                        if (mediaLibraryPermissionGranted) {
+                            onOpenFolder(FolderViewKind.SafeClipSaved)
+                        } else {
+                            onRequestMediaLibraryPermission()
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -145,29 +171,18 @@ fun MainHomeScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HomeShortcut("제출 내역", statusSummary.submissionCountText, Modifier.weight(1f), onClick = onOpenStatus)
                 HomeShortcut(
-                    title = "설정",
-                    subtitle = if (askAnswerCount > 0) "문의 답변 ${askAnswerCount}개" else "환경 관리",
+                    title = "마이페이지",
+                    subtitle = if (askAnswerCount > 0) "문의 답변 ${askAnswerCount}개" else "계정 및 문의",
                     modifier = Modifier.weight(1f),
-                    onClick = onOpenSettings
+                    onClick = onOpenMyPage
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PermissionStatusTile(
-                    label = "폴더 권한",
-                    granted = folderPermissionGranted,
-                    actionText = "폴더 선택",
-                    onAction = onLoadVideos,
-                    modifier = Modifier.weight(1f)
-                )
-                PermissionStatusTile(
-                    label = "카메라 권한",
-                    granted = cameraPermissionGranted,
-                    actionText = "권한 요청",
-                    onAction = onRequestCameraPermission,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            PrimaryActionButton(
+                text = "실시간 녹화",
+                onClick = onOpenLiveRecording,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             state.errorMessage?.let {
                 Text(text = it, color = MaterialTheme.colorScheme.error)
@@ -177,45 +192,12 @@ fun MainHomeScreen(
 }
 
 @Composable
-private fun PermissionStatusTile(
-    label: String,
-    granted: Boolean,
-    actionText: String,
-    onAction: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    GlassPanel(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = label,
-                fontWeight = FontWeight.Bold,
-                fontSize = HomeTileTextStyle.TITLE_FONT_SIZE_SP.sp
-            )
-            Box(
-                modifier = Modifier
-                    .size(11.dp)
-                    .background(if (granted) SafeClipSuccess else SafeClipError, CircleShape)
-            )
-        }
-        Text(
-            text = if (granted) "ON" else "OFF",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = HomeTileTextStyle.SUBTITLE_FONT_SIZE_SP.sp
-        )
-        SecondaryActionButton(text = actionText, onClick = onAction, enabled = !granted)
-    }
-}
-
-@Composable
 private fun FolderStatusTile(
     label: String,
     value: String,
     enabled: Boolean,
     isPrimary: Boolean,
+    actionText: String = "폴더 보기",
     onOpenFolder: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -235,7 +217,7 @@ private fun FolderStatusTile(
         }
         Spacer(modifier = Modifier.weight(0.01f))
         HomeActionButton(
-            text = "폴더 보기",
+            text = actionText,
             isPrimary = isPrimary,
             onClick = onOpenFolder,
             enabled = enabled

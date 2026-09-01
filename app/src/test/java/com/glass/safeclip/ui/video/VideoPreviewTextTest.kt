@@ -29,4 +29,20 @@ class VideoPreviewTextTest {
             VideoPreviewText.clipExportFailureMessage("구간 오류")
         )
     }
+
+    @Test
+    fun mutedCopyMessagesExplainResult() {
+        assertEquals(
+            "음성 제거 사본 저장 완료: DCIM/SafeClip/front_MUTED.mp4",
+            VideoPreviewText.mutedCopySuccessMessage("DCIM/SafeClip/front_MUTED.mp4")
+        )
+        assertEquals(
+            "음성 제거 사본을 만들지 못했습니다.",
+            VideoPreviewText.mutedCopyFailureMessage(null)
+        )
+        assertEquals(
+            "음성 제거 사본을 만들지 못했습니다. 변환 오류",
+            VideoPreviewText.mutedCopyFailureMessage("변환 오류")
+        )
+    }
 }

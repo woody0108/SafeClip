@@ -15,12 +15,12 @@ class HomeImportActionsTest {
             cameraPermissionGranted = true
         )
 
-        assertEquals("블랙박스 폴더 선택", actions.folderButtonText)
+        assertEquals("폴더 설정 열기", actions.folderButtonText)
         assertTrue(actions.folderButtonIsPrimary)
         assertFalse(actions.showRecentButton)
         assertFalse(actions.recentButtonIsPrimary)
         assertFalse(actions.recentButtonEnabled)
-        assertFalse(actions.eventFolderEnabled)
+        assertTrue(actions.eventFolderEnabled)
         assertNull(actions.selectedFolderText)
     }
 
@@ -41,7 +41,7 @@ class HomeImportActionsTest {
     }
 
     @Test
-    fun cameraOffKeepsRecentEventsAndEventFolderDisabled() {
+    fun generatedMediaFolderStaysEnabledWithoutCameraPermission() {
         val actions = HomeImportActions.from(
             selectedFolderName = "BLACKBOX/EVENT",
             folderPermissionGranted = true,
@@ -52,6 +52,6 @@ class HomeImportActionsTest {
         assertFalse(actions.showRecentButton)
         assertFalse(actions.recentButtonIsPrimary)
         assertFalse(actions.recentButtonEnabled)
-        assertFalse(actions.eventFolderEnabled)
+        assertTrue(actions.eventFolderEnabled)
     }
 }

@@ -37,6 +37,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.glass.safeclip.data.media.PlaybackSpeedOptions
+import com.glass.safeclip.data.media.EventClipFileName
+import com.glass.safeclip.data.media.SafeClipMediaSaveLocation
 import com.glass.safeclip.data.media.VideoClipExportResult
 import com.glass.safeclip.data.media.VideoClipSelection
 import com.glass.safeclip.data.media.VideoClipText
@@ -75,6 +77,18 @@ object VideoPreviewText {
             "클립을 저장하지 못했습니다. $reason"
         }
     }
+
+    fun mutedCopySuccessMessage(path: String): String {
+        return "음성 제거 사본 저장 완료: $path"
+    }
+
+    fun mutedCopyFailureMessage(reason: String?): String {
+        return if (reason.isNullOrBlank()) {
+            "음성 제거 사본을 만들지 못했습니다."
+        } else {
+            "음성 제거 사본을 만들지 못했습니다. $reason"
+        }
+    }
 }
 
 @OptIn(UnstableApi::class)
@@ -84,6 +98,8 @@ fun VideoPreviewScreen(
     onBack: () -> Unit,
     onCaptureFrame: suspend (Uri, String, Long) -> Result<File>,
     onExportClip: suspend (VideoCandidate, VideoClipSelection) -> Result<VideoClipExportResult>,
+    canRemoveAudio: Boolean,
+    onRemoveAudio: suspend (Uri, String) -> Result<Uri>,
     onSubmit: (VideoCandidate, VideoClipExportResult?) -> Unit
 ) {
     val context = LocalContext.current
@@ -97,6 +113,7 @@ fun VideoPreviewScreen(
     var savedClip by remember(video.uriString) { mutableStateOf<VideoClipExportResult?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var isExporting by remember { mutableStateOf(false) }
+    var isRemovingAudio by remember { mutableStateOf(false) }
 
     LaunchedEffect(videoUri) {
         player.setMediaItem(MediaItem.fromUri(videoUri))
@@ -213,6 +230,32 @@ fun VideoPreviewScreen(
                                     onFailure = { VideoPreviewText.clipExportFailureMessage(it.message) }
                                 )
                                 isExporting = false
+                            }
+                        }
+                    )
+                }
+
+                if (canRemoveAudio && !video.displayName.endsWith("_MUTED.mp4", ignoreCase = true)) {
+                    CompactControlChip(
+                        text = if (isRemovingAudio) "음성 제거 중" else "음성 제거 사본 만들기",
+                        selected = false,
+                        enabled = !isExporting && !isRemovingAudio,
+                        onClick = {
+                            scope.launch {
+                                isRemovingAudio = true
+                                statusMessage = "음성 제거 사본을 만드는 중입니다."
+                                val result = onRemoveAudio(videoUri, video.displayName)
+                                statusMessage = result.fold(
+                                    onSuccess = {
+                                        VideoPreviewText.mutedCopySuccessMessage(
+                                            SafeClipMediaSaveLocation.displayPath(
+                                                EventClipFileName.muted(video.displayName)
+                                            )
+                                        )
+                                    },
+                                    onFailure = { VideoPreviewText.mutedCopyFailureMessage(it.message) }
+                                )
+                                isRemovingAudio = false
                             }
                         }
                     )

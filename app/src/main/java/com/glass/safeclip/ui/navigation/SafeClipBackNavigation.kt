@@ -7,14 +7,16 @@ object SafeClipBackNavigation {
             SafeClipScreen.Start -> null
             SafeClipScreen.Connecting -> SafeClipScreen.Start
             SafeClipScreen.Home -> SafeClipScreen.Start
+            SafeClipScreen.LiveRecording -> SafeClipScreen.Home
             is SafeClipScreen.VideoBrowser -> SafeClipScreen.Home
             is SafeClipScreen.FolderManager -> SafeClipScreen.Home
             is SafeClipScreen.VideoPreview -> screen.returnScreen
             is SafeClipScreen.ImagePreview -> screen.returnScreen
             is SafeClipScreen.SubmissionForm -> screen.returnScreen
             SafeClipScreen.SubmissionStatus -> SafeClipScreen.Home
-            SafeClipScreen.Settings -> SafeClipScreen.Home
-            SafeClipScreen.Ask -> SafeClipScreen.Settings
+            SafeClipScreen.MyPage -> SafeClipScreen.Home
+            is SafeClipScreen.Settings -> screen.returnScreen
+            SafeClipScreen.Ask -> SafeClipScreen.MyPage
         }
     }
 }

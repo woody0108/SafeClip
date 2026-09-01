@@ -12,6 +12,7 @@ sealed interface SafeClipScreen {
     data object Start : SafeClipScreen
     data object Connecting : SafeClipScreen
     data object Home : SafeClipScreen
+    data object LiveRecording : SafeClipScreen
     data class VideoBrowser(val initialSource: VideoBrowserSource = VideoBrowserSource.Blackbox) : SafeClipScreen
     data class FolderManager(val kind: FolderViewKind) : SafeClipScreen
     data class VideoPreview(
@@ -33,7 +34,8 @@ sealed interface SafeClipScreen {
         val returnScreen: SafeClipScreen = VideoPreview(video)
     ) : SafeClipScreen
     data object SubmissionStatus : SafeClipScreen
-    data object Settings : SafeClipScreen
+    data object MyPage : SafeClipScreen
+    data class Settings(val returnScreen: SafeClipScreen = Home) : SafeClipScreen
     data object Ask : SafeClipScreen
 
     companion object {

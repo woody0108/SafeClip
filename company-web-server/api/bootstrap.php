@@ -69,6 +69,73 @@ function find_video_path(array $config, array $fields): string
     return '';
 }
 
+function company_web_upstream_url(array $config): string
+{
+    return rtrim(trim((string)($config['upstream_company_web_url'] ?? '')), '/');
+}
+
+function decode_json_object(string $body): array
+{
+    $body = preg_replace('/^\xEF\xBB\xBF/', '', $body) ?? $body;
+    $payload = json_decode($body, true);
+    if (!is_array($payload)) {
+        throw new RuntimeException('Upstream company web returned invalid JSON.');
+    }
+    return $payload;
+}
+
+function upstream_company_payload(array $config, string $apiPath): array
+{
+    $baseUrl = company_web_upstream_url($config);
+    if ($baseUrl === '') {
+        throw new RuntimeException('upstream_company_web_url is missing.');
+    }
+
+    $response = upstream_http_get($baseUrl . '/' . ltrim($apiPath, '/'));
+    if ($response['status'] >= 400) {
+        throw new RuntimeException('Upstream company web request failed with HTTP ' . $response['status'] . '.');
+    }
+    return decode_json_object($response['body']);
+}
+
+function upstream_http_get(string $url): array
+{
+    return upstream_http_request('GET', $url);
+}
+
+function upstream_http_request(
+    string $method,
+    string $url,
+    array $headers = [],
+    ?string $body = null
+): array {
+    if (function_exists('curl_init')) {
+        return http_request($method, $url, $headers, $body);
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => $method,
+            'header' => implode("\r\n", $headers),
+            'content' => $body ?? '',
+            'timeout' => 30,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $body = @file_get_contents($url, false, $context);
+    if ($body === false) {
+        throw new RuntimeException('Could not connect to upstream company web.');
+    }
+
+    $status = 0;
+    foreach ((array)($http_response_header ?? []) as $header) {
+        if (preg_match('/^HTTP\/\S+\s+(\d{3})/', (string)$header, $matches)) {
+            $status = (int)$matches[1];
+        }
+    }
+    return ['status' => $status, 'body' => $body];
+}
+
 function submission_attachments(array $config, array $fields): array
 {
     $attachments = is_array($fields['attachments'] ?? null) ? $fields['attachments'] : [];
@@ -359,6 +426,15 @@ function document_id_from_name(string $name): string
 
 function clean_relative_path(string $path): string
 {
+    $decoded = preg_replace_callback(
+        '/(?:\\\\u[0-9a-fA-F]{4})+/',
+        static function (array $matches): string {
+            $value = json_decode('"' . $matches[0] . '"', true);
+            return is_string($value) ? $value : $matches[0];
+        },
+        $path
+    );
+    $path = is_string($decoded) ? $decoded : $path;
     $path = str_replace('\\', '/', trim($path));
     $path = ltrim($path, '/');
 
@@ -367,6 +443,16 @@ function clean_relative_path(string $path): string
     }
 
     return $path;
+}
+
+function sample_relative_path_from_id(string $id): string
+{
+    $prefix = 'sample-';
+    if (!str_starts_with($id, $prefix)) {
+        return '';
+    }
+
+    return clean_relative_path(rawurldecode(substr($id, strlen($prefix))));
 }
 
 function save_json_cache(string $fileName, array $data): void

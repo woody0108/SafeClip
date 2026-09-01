@@ -77,6 +77,31 @@ class FirestoreSubmissionRepository(
         }
     }
 
+    suspend fun deleteByOwnerUid(ownerUid: String): SubmissionDeleteResult {
+        if (ownerUid.isBlank()) {
+            return SubmissionDeleteResult.Failed("삭제할 회원 ID를 찾지 못했습니다.")
+        }
+        return try {
+            val snapshot = firestore.collection(COLLECTION_SUBMISSIONS)
+                .whereEqualTo("ownerUid", ownerUid)
+                .get()
+                .await()
+            snapshot.documents.chunked(450).forEach { documents ->
+                val batch = firestore.batch()
+                documents.forEach { document -> batch.delete(document.reference) }
+                batch.commit().await()
+            }
+            SubmissionDeleteResult.Success(
+                deletedCount = snapshot.size(),
+                message = "제출내역 ${snapshot.size()}개가 삭제되었습니다."
+            )
+        } catch (exception: Exception) {
+            SubmissionDeleteResult.Failed(
+                exception.localizedMessage ?: "제출내역 삭제에 실패했습니다."
+            )
+        }
+    }
+
     private companion object {
         const val COLLECTION_SUBMISSIONS = "submissions"
     }
@@ -113,4 +138,15 @@ sealed interface SubmissionOwnerLinkResult {
     data class Failed(
         val message: String
     ) : SubmissionOwnerLinkResult
+}
+
+sealed interface SubmissionDeleteResult {
+    data class Success(
+        val deletedCount: Int,
+        val message: String
+    ) : SubmissionDeleteResult
+
+    data class Failed(
+        val message: String
+    ) : SubmissionDeleteResult
 }

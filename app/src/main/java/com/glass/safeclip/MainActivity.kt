@@ -5,7 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings as AndroidSettings
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -13,28 +17,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.glass.safeclip.data.auth.AuthConnectionResult
 import com.glass.safeclip.app.AuthUserProfileFactory
+import com.glass.safeclip.app.ExistingUserLoginPolicy
+import com.glass.safeclip.app.ExistingUserLoginResult
 import com.glass.safeclip.app.FolderLoadCoordinator
 import com.glass.safeclip.app.FolderManagerFileSelector
 import com.glass.safeclip.app.FolderPermissionSnapshot
+import com.glass.safeclip.app.MediaLibraryAccessLevel
+import com.glass.safeclip.app.MediaLibraryPermissionPlan
 import com.glass.safeclip.app.SavedFolderRestorePlan
 import com.glass.safeclip.app.SavedFolderRestorePlanner
 import com.glass.safeclip.app.SubmittedFilePreviewRoute
@@ -60,7 +64,9 @@ import com.glass.safeclip.data.identity.GuestIdentityStore
 import com.glass.safeclip.data.media.AndroidFrameCaptureStore
 import com.glass.safeclip.data.media.AndroidSafeClipSavedMediaRepository
 import com.glass.safeclip.data.media.AndroidVideoClipExporter
-import com.glass.safeclip.data.media.SafeClipEventFolder
+import com.glass.safeclip.data.media.Media3AudioRemovalExporter
+import com.glass.safeclip.data.media.MediaExportProgress
+import com.glass.safeclip.data.media.SafeClipMediaSaveLocation
 import com.glass.safeclip.data.profile.FirestoreUserProfileRepository
 import com.glass.safeclip.data.profile.UserProfile
 import com.glass.safeclip.data.profile.UserProfileSyncResult
@@ -70,6 +76,7 @@ import com.glass.safeclip.data.submission.NasSubmissionUploadClient
 import com.glass.safeclip.data.submission.NasSubmissionUploadProgress
 import com.glass.safeclip.data.submission.SubmissionAttachment
 import com.glass.safeclip.data.submission.SubmissionInput
+import com.glass.safeclip.data.submission.SubmissionDeleteResult
 import com.glass.safeclip.data.submission.SubmissionListResult
 import com.glass.safeclip.data.submission.SubmissionOwnerLinkResult
 import com.glass.safeclip.data.submission.SubmissionSaveResult
@@ -77,13 +84,20 @@ import com.glass.safeclip.ui.folder.FolderManagerScreen
 import com.glass.safeclip.ui.folder.FolderManagerText
 import com.glass.safeclip.ui.folder.FolderViewKind
 import com.glass.safeclip.ui.folder.ImagePreviewScreen
+import com.glass.safeclip.ui.home.ExitConfirmDialog
 import com.glass.safeclip.ui.home.MainHomeScreen
+import com.glass.safeclip.ui.home.ReportWarningDialog
 import com.glass.safeclip.ui.navigation.SafeClipBackNavigation
 import com.glass.safeclip.ui.navigation.SafeClipScreen
 import com.glass.safeclip.ui.onboarding.BootLoadingScreen
 import com.glass.safeclip.ui.onboarding.ConnectingScreen
 import com.glass.safeclip.ui.onboarding.StartScreen
+import com.glass.safeclip.ui.recording.LiveRecordingScreen
+import com.glass.safeclip.ui.recording.LiveRecordingViewModel
+import com.glass.safeclip.ui.recording.LiveRecordingViewModelFactory
 import com.glass.safeclip.ui.settings.AskScreen
+import com.glass.safeclip.ui.settings.MyPageScreen
+import com.glass.safeclip.ui.settings.SettingsPermissionItems
 import com.glass.safeclip.ui.settings.SettingsScreen
 import com.glass.safeclip.ui.status.LocalSubmissionRecord
 import com.glass.safeclip.ui.status.SubmissionStatusScreen
@@ -97,10 +111,22 @@ import com.kakao.vectormap.KakaoMapSdk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
+    private var liveRecordingKeyHandler: ((Int, Long) -> Boolean)? = null
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (event.repeatCount == 0 &&
+            liveRecordingKeyHandler?.invoke(keyCode, event.eventTime) == true
+        ) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (BuildConfig.SAFECLIP_KAKAO_NATIVE_APP_KEY.isNotBlank()) {
@@ -114,10 +140,17 @@ class MainActivity : ComponentActivity() {
         val folderLoadCoordinator = FolderLoadCoordinator(scanner, managedFileScanner)
         val folderStore = LastSelectedFolderStore(this)
         val eventFolderStore = LastSelectedEventFolderStore(this)
-        val safeClipEventFolder = SafeClipEventFolder(this, eventFolderStore)
         val frameCaptureStore = AndroidFrameCaptureStore(this, eventFolderStore)
         val clipExporter = AndroidVideoClipExporter(this, eventFolderStore)
-        val savedMediaRepository = AndroidSafeClipSavedMediaRepository(this, eventFolderStore)
+        val audioRemovalExporter = Media3AudioRemovalExporter(this)
+        val savedMediaRepository = AndroidSafeClipSavedMediaRepository(
+            context = this,
+            eventFolderStore = eventFolderStore,
+            useAccessibleSelectionFallback = {
+                MediaLibraryPermissionPlan.accessLevel(Build.VERSION.SDK_INT, ::hasPermission) ==
+                    MediaLibraryAccessLevel.Limited
+            }
+        )
         val managedFileOperator = AndroidManagedFileOperator(this)
         val guestIdentityStore = GuestIdentityStore(this)
         val guestId = guestIdentityStore.loadOrCreate()
@@ -135,6 +168,8 @@ class MainActivity : ComponentActivity() {
             uploadUrl = BuildConfig.SAFECLIP_NAS_UPLOAD_URL,
             uploadKey = BuildConfig.SAFECLIP_NAS_UPLOAD_KEY
         )
+        @Suppress("DEPRECATION")
+        val dcimDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
 
         setContent {
             SafeClipTheme {
@@ -150,7 +185,21 @@ class MainActivity : ComponentActivity() {
                 var currentFolderFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
                 var eventFolderFiles by remember { mutableStateOf<List<ManagedFolderFile>>(emptyList()) }
                 var folderManagerRefreshing by remember { mutableStateOf(false) }
+                var hasMediaLibraryPermission by remember {
+                    mutableStateOf(
+                        MediaLibraryPermissionPlan.isGranted(Build.VERSION.SDK_INT, ::hasPermission)
+                    )
+                }
                 var hasCameraPermission by remember { mutableStateOf(hasPermission(Manifest.permission.CAMERA)) }
+                var hasMicrophonePermission by remember { mutableStateOf(hasPermission(Manifest.permission.RECORD_AUDIO)) }
+                var hasLocationPermission by remember {
+                    mutableStateOf(
+                        hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                            hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    )
+                }
+                var pendingRecordingStart by remember { mutableStateOf<(() -> Unit)?>(null) }
+                var pendingAudioDisable by remember { mutableStateOf<(() -> Unit)?>(null) }
                 var showExitConfirmDialog by remember { mutableStateOf(false) }
                 var showReportWarningDialog by remember {
                     mutableStateOf(!reportWarningPreferences.getBoolean(REPORT_WARNING_DISMISSED_KEY, false))
@@ -189,10 +238,6 @@ class MainActivity : ComponentActivity() {
                     return folderPermissionSnapshot().canRestore(state.selectedFolderUriString)
                 }
 
-                fun hasEventFolderPermission(): Boolean {
-                    return folderPermissionSnapshot().canRestore(eventFolderStore.load()?.toString())
-                }
-
                 fun savedFolderRestorePlan(savedUriString: String?): SavedFolderRestorePlan {
                     return SavedFolderRestorePlanner.plan(
                         savedUriString = savedUriString,
@@ -201,7 +246,14 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun refreshRuntimePermissions() {
+                    hasMediaLibraryPermission = MediaLibraryPermissionPlan.isGranted(
+                        sdkInt = Build.VERSION.SDK_INT,
+                        hasPermission = ::hasPermission
+                    )
                     hasCameraPermission = hasPermission(Manifest.permission.CAMERA)
+                    hasMicrophonePermission = hasPermission(Manifest.permission.RECORD_AUDIO)
+                    hasLocationPermission = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                        hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
                 }
 
                 fun refreshSavedMediaCountAsync() {
@@ -262,20 +314,8 @@ class MainActivity : ComponentActivity() {
                     refreshRuntimePermissions()
 
                     val files = withContext(Dispatchers.IO) {
-                        if (safeClipEventFolder.loadOrCreate() == null) {
-                            null
-                        } else {
-                            savedMediaRepository.listSavedItems()
-                        }
-                    }
-                    if (files == null) {
-                        eventFolderFiles = emptyList()
-                        state = state.copy(
-                            savedMediaItemCount = 0,
-                            isLoading = false,
-                            errorMessage = "SafeClip 폴더를 확인하지 못했습니다. 폴더를 다시 선택해주세요."
-                        )
-                        return
+                        SafeClipMediaSaveLocation.ensurePublicDirectory(dcimDirectory)
+                        savedMediaRepository.listSavedItems()
                     }
                     eventFolderFiles = files
                     state = state.copy(
@@ -403,17 +443,39 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                suspend fun loadCurrentUserProfile() {
-                    val currentUser = firebaseAuthConnector.currentSignedInUser() ?: return
-                    syncSignedInUser(currentUser)
-                    when (val result = userProfileRepository.load(currentUser.uid)) {
-                        is UserProfileSyncResult.Success -> {
-                            syncedUserProfile = result.profile
+                suspend fun loginExistingUser(result: AuthConnectionResult): Boolean {
+                    if (result !is AuthConnectionResult.SignedIn) {
+                        showAuthResult(result)
+                        return false
+                    }
+                    when (val existing = ExistingUserLoginPolicy.evaluate(userProfileRepository.load(result.uid))) {
+                        is ExistingUserLoginResult.Allowed -> {
+                            val profile = AuthUserProfileFactory.from(result, guestId) ?: existing.profile
+                            when (val syncResult = userProfileRepository.saveLogin(profile)) {
+                                is UserProfileSyncResult.Success -> {
+                                    syncedUserProfile = syncResult.profile
+                                    val name = result.displayName ?: result.email ?: "계정"
+                                    authMessage = "$name 계정으로 로그인되었습니다."
+                                    return true
+                                }
+                                is UserProfileSyncResult.Failed -> {
+                                    syncedUserProfile = existing.profile
+                                    authMessage = syncResult.message
+                                    return true
+                                }
+                            }
                         }
-                        is UserProfileSyncResult.Failed -> {
-                            authMessage = result.message
+                        is ExistingUserLoginResult.Rejected -> {
+                            firebaseAuthConnector.signOut()
+                            authMessage = existing.message
+                            return false
                         }
                     }
+                }
+
+                suspend fun loadCurrentUserProfile() {
+                    val currentUser = firebaseAuthConnector.currentSignedInUser() ?: return
+                    loginExistingUser(currentUser)
                 }
 
                 fun loadCurrentUserProfileAsync() {
@@ -467,12 +529,23 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun continueStartupToHome() {
+                    screen = SafeClipScreen.Connecting
+                    refreshSubmissionRecordsAsync()
+                    scope.launch {
+                        loadStartupDataBeforeHome()
+                        screen = SafeClipScreen.Home
+                    }
+                }
+
                 BackHandler(enabled = screen == SafeClipScreen.Start) {
                     showExitConfirmDialog = true
                 }
 
                 BackHandler(
-                    enabled = screen != SafeClipScreen.Start && SafeClipBackNavigation.previousScreen(screen) != null
+                    enabled = screen != SafeClipScreen.Start &&
+                        screen != SafeClipScreen.LiveRecording &&
+                        SafeClipBackNavigation.previousScreen(screen) != null
                 ) {
                     goBack()
                 }
@@ -480,6 +553,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(screen) {
                     if (screen == SafeClipScreen.Home) {
                         loadAskItems()
+                        refreshSavedMediaCountAsync()
                     }
                     if (screen !is SafeClipScreen.SubmissionForm) {
                         retryUploadSubmissionId = null
@@ -487,37 +561,57 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val cameraPermissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { granted ->
-                    hasCameraPermission = granted
+                val settingsPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) {
                     refreshRuntimePermissions()
+                    refreshSavedMediaCountAsync()
                 }
 
-                val eventFolderPicker = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.OpenDocumentTree()
-                ) { uri: Uri? ->
-                    if (uri == null) {
-                        state = state.copy(errorMessage = "SafeClip 폴더 연결이 취소되었습니다.")
-                        screen = SafeClipScreen.Home
-                        return@rememberLauncherForActivityResult
-                    }
-
-                    runCatching {
-                        contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        )
-                    }
-                    eventFolderStore.save(uri)
-                    state = state.copy(errorMessage = null)
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            safeClipEventFolder.ensureIn(uri)
+                val permissionLifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(permissionLifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            refreshRuntimePermissions()
+                            refreshSavedMediaCountAsync()
                         }
-                        loadStartupDataBeforeHome()
-                        screen = SafeClipScreen.Home
                     }
+                    permissionLifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        permissionLifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                val recordingPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { results ->
+                    hasCameraPermission = hasPermission(Manifest.permission.CAMERA)
+                    val cameraGranted = results[Manifest.permission.CAMERA] ?: hasCameraPermission
+                    val storageGranted = Build.VERSION.SDK_INT > Build.VERSION_CODES.P ||
+                        (results[Manifest.permission.WRITE_EXTERNAL_STORAGE]
+                            ?: hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                    val locationGranted = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                        hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    if (!cameraGranted || !storageGranted) {
+                        Toast.makeText(this@MainActivity, "녹화에 필요한 권한이 없습니다.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val audioGranted = results[Manifest.permission.RECORD_AUDIO]
+                            ?: hasPermission(Manifest.permission.RECORD_AUDIO)
+                        if (!audioGranted) {
+                            pendingAudioDisable?.invoke()
+                            Toast.makeText(this@MainActivity, "마이크 권한이 없어 영상만 녹화합니다.", Toast.LENGTH_SHORT).show()
+                        }
+                        if (!locationGranted) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "위치 권한이 없어 이벤트 영상에 위치정보를 넣지 않습니다.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        pendingRecordingStart?.invoke()
+                    }
+                    pendingRecordingStart = null
+                    pendingAudioDisable = null
                 }
 
                 val folderPicker = rememberLauncherForActivityResult(
@@ -552,7 +646,7 @@ class MainActivity : ComponentActivity() {
                         loadCurrentUserProfile()
                         loadSubmissionRecords()
                         val savedMediaFiles = withContext(Dispatchers.IO) {
-                            safeClipEventFolder.loadOrCreate()
+                            SafeClipMediaSaveLocation.ensurePublicDirectory(dcimDirectory)
                             savedMediaRepository.listSavedItems()
                         }
                         state = state.copy(savedMediaItemCount = savedMediaFiles.size)
@@ -620,77 +714,26 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (showExitConfirmDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showExitConfirmDialog = false },
-                        title = { Text("앱을 종료하시겠습니까?") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    showExitConfirmDialog = false
-                                    finish()
-                                }
-                            ) {
-                                Text("예")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showExitConfirmDialog = false }) {
-                                Text("아니오")
-                            }
+                    ExitConfirmDialog(
+                        onCancel = { showExitConfirmDialog = false },
+                        onConfirm = {
+                            showExitConfirmDialog = false
+                            finish()
                         }
                     )
                 }
 
                 if (showReportWarningDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showReportWarningDialog = false },
-                        title = {
-                            Text(
-                                text = "교통법규 위반 신고 안내",
-                                fontSize = 20.sp
-                            )
-                        },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(
-                                    text = "출처 : 안전신문고\n\n" +
-                                        "안전신문고로 접수되는 교통법규 위반 신고의 경우 증거주의 원칙에 따라 " +
-                                        "신고인이 제출한 증거자료(동영상, 사진)에 의해 피신고자의 위반이 명백해야 처분이 이루어질 수 있으며,\n\n" +
-                                        "교통법규 위반 신고는 위반일로부터 2일이 경과한 후에 신고된 경우 " +
-                                        "위반이 확인되더라도 경고·계도 처리됨을 알려드립니다.\n\n" +
-                                        "※ 제보 마지막 날(이틀째 되는 날)이 주말·공휴일에 해당하는 경우 다음날 평일까지 제보 가능",
-                                    fontSize = 16.sp,
-                                    lineHeight = 23.sp
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = hideReportWarningAgain,
-                                        onCheckedChange = { hideReportWarningAgain = it }
-                                    )
-                                    Text(
-                                        text = "다시 표시 안함",
-                                        fontSize = 16.sp,
-                                        lineHeight = 20.sp
-                                    )
-                                }
+                    ReportWarningDialog(
+                        checked = hideReportWarningAgain,
+                        onCheckedChange = { hideReportWarningAgain = it },
+                        onConfirm = {
+                            if (hideReportWarningAgain) {
+                                reportWarningPreferences.edit()
+                                    .putBoolean(REPORT_WARNING_DISMISSED_KEY, true)
+                                    .apply()
                             }
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    if (hideReportWarningAgain) {
-                                        reportWarningPreferences.edit()
-                                            .putBoolean(REPORT_WARNING_DISMISSED_KEY, true)
-                                            .apply()
-                                    }
-                                    showReportWarningDialog = false
-                                }
-                            ) {
-                                Text("확인")
-                            }
+                            showReportWarningDialog = false
                         }
                     )
                 }
@@ -699,34 +742,24 @@ class MainActivity : ComponentActivity() {
                     SafeClipScreen.Boot -> BootLoadingScreen()
 
                     SafeClipScreen.Start -> StartScreen(
-                        guestId = guestId,
                         linkedDisplayName = syncedUserProfile?.displayName,
                         linkedEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
                         authMessage = authMessage,
-                        onGoogleSignUp = {
+                        onGoogleLogin = {
                             scope.launch {
-                                syncSignedInUser(firebaseAuthConnector.signInWithGoogle())
-                                refreshSubmissionRecordsAsync()
-                            }
-                        },
-                        onEmailSignUp = { email, password ->
-                            scope.launch {
-                                syncSignedInUser(firebaseAuthConnector.signUpWithEmail(email, password))
-                                refreshSubmissionRecordsAsync()
-                            }
-                        },
-                        onStart = {
-                            screen = SafeClipScreen.Connecting
-                            refreshSubmissionRecordsAsync()
-                            if (!hasEventFolderPermission()) {
-                                eventFolderPicker.launch(null)
-                            } else {
-                                scope.launch {
-                                    loadStartupDataBeforeHome()
-                                    screen = SafeClipScreen.Home
+                                if (loginExistingUser(firebaseAuthConnector.signInWithGoogle())) {
+                                    refreshSubmissionRecordsAsync()
                                 }
                             }
-                        }
+                        },
+                        onEmailLogin = { email, password ->
+                            scope.launch {
+                                if (loginExistingUser(firebaseAuthConnector.signInWithEmail(email, password))) {
+                                    refreshSubmissionRecordsAsync()
+                                }
+                            }
+                        },
+                        onStart = ::continueStartupToHome
                     )
 
                     SafeClipScreen.Connecting -> ConnectingScreen()
@@ -737,25 +770,27 @@ class MainActivity : ComponentActivity() {
                         currentFolderFiles = currentFolderFilesOrFallback(),
                         folderPermissionGranted = hasFolderPermission(),
                         cameraPermissionGranted = hasCameraPermission,
+                        mediaLibraryPermissionGranted = hasMediaLibraryPermission,
                         submissionCount = submissionRecords.size,
                         askAnswerCount = askItems.count { it.answer.isNotBlank() },
-                        onLoadVideos = { folderPicker.launch(null) },
-                        onRequestCameraPermission = {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        onOpenFolderPermissionSettings = {
+                            screen = SafeClipScreen.Settings()
+                        },
+                        onRequestMediaLibraryPermission = {
+                            settingsPermissionLauncher.launch(
+                                MediaLibraryPermissionPlan.requiredPermissions(Build.VERSION.SDK_INT)
+                                    .toTypedArray()
+                            )
                         },
                         onOpenRecentEvents = {
                             if (hasFolderPermission() && hasCameraPermission) {
                                 screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.Blackbox)
                             } else {
-                                state = state.copy(errorMessage = "폴더 권한과 카메라 권한을 먼저 켜주세요.")
+                                screen = SafeClipScreen.Settings()
                             }
                         },
                         onOpenFolder = {
-                            if (it == FolderViewKind.SafeClipSaved && !hasEventFolderPermission()) {
-                                eventFolderPicker.launch(null)
-                            } else if (it == FolderViewKind.SafeClipSaved && !(hasFolderPermission() && hasCameraPermission)) {
-                                state = state.copy(errorMessage = "폴더 권한과 카메라 권한을 먼저 켜주세요.")
-                            } else if (it == FolderViewKind.SafeClipSaved) {
+                            if (it == FolderViewKind.SafeClipSaved) {
                                 screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.SafeClip)
                             } else if (it == FolderViewKind.CurrentFolder) {
                                 screen = SafeClipScreen.VideoBrowser(VideoBrowserSource.Blackbox)
@@ -767,27 +802,127 @@ class MainActivity : ComponentActivity() {
                             refreshSubmissionRecordsAsync()
                             screen = SafeClipScreen.SubmissionStatus
                         },
-                        onOpenSettings = {
-                            screen = SafeClipScreen.Settings
+                        onOpenMyPage = {
+                            screen = SafeClipScreen.MyPage
                             scope.launch {
                                 loadCurrentUserProfile()
                                 loadAskItems()
                             }
                         },
+                        onOpenSettings = {
+                            screen = SafeClipScreen.Settings()
+                        },
+                        onOpenLiveRecording = {
+                            if (hasCameraPermission) {
+                                screen = SafeClipScreen.LiveRecording
+                            } else {
+                                screen = SafeClipScreen.Settings()
+                            }
+                        },
                         onBack = ::goBack
                     )
 
-                    SafeClipScreen.Settings -> SettingsScreen(
+                    SafeClipScreen.LiveRecording -> {
+                        val liveViewModel: LiveRecordingViewModel = viewModel(
+                            factory = remember { LiveRecordingViewModelFactory(this@MainActivity) }
+                        )
+                        val liveState by liveViewModel.state.collectAsState()
+                        val lifecycleOwner = LocalLifecycleOwner.current
+
+                        DisposableEffect(liveViewModel, lifecycleOwner) {
+                            liveRecordingKeyHandler = liveViewModel::onRemoteKey
+                            val observer = LifecycleEventObserver { _, event ->
+                                if (event == Lifecycle.Event.ON_STOP) liveViewModel.stopRecording()
+                            }
+                            lifecycleOwner.lifecycle.addObserver(observer)
+                            onDispose {
+                                lifecycleOwner.lifecycle.removeObserver(observer)
+                                liveRecordingKeyHandler = null
+                                liveViewModel.leaveScreen()
+                            }
+                        }
+
+                        LiveRecordingScreen(
+                            state = liveState,
+                            onStart = startRecording@{
+                                if (!hasPermission(Manifest.permission.CAMERA)) {
+                                    screen = SafeClipScreen.Settings()
+                                    return@startRecording
+                                }
+                                val missing = buildList {
+                                    if (liveState.audioEnabled && !hasPermission(Manifest.permission.RECORD_AUDIO)) {
+                                        add(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                                        !hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                    ) {
+                                        add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                    }
+                                    if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) &&
+                                        !hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                    ) {
+                                        add(Manifest.permission.ACCESS_FINE_LOCATION)
+                                        add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                    }
+                                }
+                                if (missing.isEmpty()) {
+                                    liveViewModel.startRecording()
+                                } else {
+                                    pendingRecordingStart = liveViewModel::startRecording
+                                    pendingAudioDisable = { liveViewModel.setAudioEnabled(false) }
+                                    recordingPermissionLauncher.launch(missing.toTypedArray())
+                                }
+                            },
+                            onStop = liveViewModel::stopRecording,
+                            onEvent = { liveViewModel.requestEvent() },
+                            onQualityChange = liveViewModel::setQuality,
+                            onAudioChange = liveViewModel::setAudioEnabled,
+                            onRemoteTestChange = liveViewModel::setRemoteTestEnabled,
+                            onBack = {
+                                liveViewModel.leaveScreen()
+                                screen = SafeClipScreen.Home
+                            },
+                            onPreviewReady = { provider -> liveViewModel.bind(lifecycleOwner, provider) }
+                        )
+                    }
+
+                    SafeClipScreen.MyPage -> MyPageScreen(
                         guestId = guestId,
                         linkedEmail = syncedUserProfile?.email ?: firebaseAuthConnector.currentUserEmail(),
                         linkedDisplayName = syncedUserProfile?.displayName,
                         linkedProvider = syncedUserProfile?.provider,
                         message = authMessage,
+                        permissionItems = SettingsPermissionItems.from(
+                            folderGranted = hasFolderPermission(),
+                            mediaLibraryGranted = hasMediaLibraryPermission,
+                            cameraGranted = hasCameraPermission,
+                            microphoneGranted = hasMicrophonePermission,
+                            locationGranted = hasLocationPermission
+                        ),
+                        inquiryCount = askItems.size,
+                        answerCount = askItems.count { it.answer.isNotBlank() },
                         onBack = ::goBack,
+                        onGoogleLogin = {
+                            scope.launch {
+                                if (loginExistingUser(firebaseAuthConnector.signInWithGoogle())) {
+                                    refreshSubmissionRecordsAsync()
+                                }
+                            }
+                        },
+                        onEmailLogin = { email, password ->
+                            scope.launch {
+                                if (loginExistingUser(firebaseAuthConnector.signInWithEmail(email, password))) {
+                                    refreshSubmissionRecordsAsync()
+                                }
+                            }
+                        },
                         onSignOut = {
                             authMessage = firebaseAuthConnector.signOut()
                             syncedUserProfile = null
                             refreshSubmissionRecordsAsync()
+                        },
+                        onOpenSettings = {
+                            screen = SafeClipScreen.Settings(SafeClipScreen.MyPage)
                         },
                         onOpenAsk = {
                             scope.launch {
@@ -801,22 +936,66 @@ class MainActivity : ComponentActivity() {
                                     is AuthConnectionResult.Failed -> reauth.message
                                     is AuthConnectionResult.NeedsFirebaseSetup -> reauth.message
                                     is AuthConnectionResult.SignedIn -> {
-                                        when (val firestoreDelete = userProfileRepository.delete(reauth.uid)) {
+                                        when (val submissionDelete = submissionRepository.deleteByOwnerUid(reauth.uid)) {
+                                            is SubmissionDeleteResult.Failed -> submissionDelete.message
+                                            is SubmissionDeleteResult.Success -> when (val firestoreDelete = userProfileRepository.delete(reauth.uid)) {
                                             is UserProfileSyncResult.Failed -> firestoreDelete.message
                                             is UserProfileSyncResult.Success -> {
                                                 when (val authDelete = firebaseAuthConnector.deleteCurrentUser()) {
                                                     is AuthConnectionResult.SignedIn -> {
                                                         syncedUserProfile = null
-                                                        "${authDelete.email ?: "계정"} 회원탈퇴가 완료되었습니다. ${firestoreDelete.message}"
+                                                        submissionRecords = emptyList()
+                                                        "${authDelete.email ?: "계정"} 회원탈퇴가 완료되었습니다. ${submissionDelete.message} ${firestoreDelete.message}"
                                                     }
                                                     is AuthConnectionResult.NeedsFirebaseSetup -> authDelete.message
                                                     is AuthConnectionResult.Failed -> authDelete.message
                                                 }
                                             }
                                         }
+                                        }
                                     }
                                 }
                             }
+                        }
+                    )
+
+                    is SafeClipScreen.Settings -> SettingsScreen(
+                        permissionItems = SettingsPermissionItems.from(
+                            folderGranted = hasFolderPermission(),
+                            mediaLibraryGranted = hasMediaLibraryPermission,
+                            cameraGranted = hasCameraPermission,
+                            microphoneGranted = hasMicrophonePermission,
+                            locationGranted = hasLocationPermission
+                        ),
+                        onBack = ::goBack,
+                        onSelectFolder = { folderPicker.launch(null) },
+                        onRequestMediaLibrary = {
+                            settingsPermissionLauncher.launch(
+                                MediaLibraryPermissionPlan.requiredPermissions(Build.VERSION.SDK_INT)
+                                    .toTypedArray()
+                            )
+                        },
+                        onRequestCamera = {
+                            settingsPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+                        },
+                        onRequestMicrophone = {
+                            settingsPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                        },
+                        onRequestLocation = {
+                            settingsPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        },
+                        onOpenSystemSettings = {
+                            startActivity(
+                                Intent(
+                                    AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
                         }
                     )
 
@@ -990,6 +1169,19 @@ class MainActivity : ComponentActivity() {
                         onExportClip = { selected, selection ->
                             val result = runCatching {
                                 clipExporter.exportClip(selected, selection)
+                            }
+                            if (result.isSuccess) refreshSavedMediaCountAsync()
+                            result
+                        },
+                        canRemoveAudio = currentScreen.video.folderPath.contains("SafeClip", ignoreCase = true),
+                        onRemoveAudio = { uri, displayName ->
+                            val result = runCatching {
+                                when (val progress = audioRemovalExporter.export(uri, displayName)
+                                    .first { it !is MediaExportProgress.Running }) {
+                                    is MediaExportProgress.Completed -> progress.uri
+                                    is MediaExportProgress.Failed -> error(progress.message)
+                                    is MediaExportProgress.Running -> error("음성 제거 작업이 완료되지 않았습니다.")
+                                }
                             }
                             if (result.isSuccess) refreshSavedMediaCountAsync()
                             result

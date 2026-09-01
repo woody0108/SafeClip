@@ -9,6 +9,16 @@ class SafeClipEventFolder(
     private val context: Context,
     private val eventFolderStore: LastSelectedEventFolderStore
 ) {
+    fun loadExisting(): DocumentFile? {
+        val parentUri = eventFolderStore.load() ?: return null
+        val parent = DocumentFile.fromTreeUri(context, parentUri) ?: return null
+        if (parent.name == SafeClipMediaSaveLocation.albumName || parent.name == LEGACY_ALBUM_NAME) {
+            return parent
+        }
+        return parent.findFile(SafeClipMediaSaveLocation.albumName)
+            ?: parent.findFile(LEGACY_ALBUM_NAME)
+    }
+
     fun ensureIn(parentUri: Uri): DocumentFile? {
         val parent = DocumentFile.fromTreeUri(context, parentUri) ?: return null
         if (parent.name == SafeClipMediaSaveLocation.albumName) return parent
@@ -21,5 +31,9 @@ class SafeClipEventFolder(
     fun loadOrCreate(): DocumentFile? {
         val parentUri = eventFolderStore.load() ?: return null
         return ensureIn(parentUri)
+    }
+
+    private companion object {
+        const val LEGACY_ALBUM_NAME = "SafeClip Captures"
     }
 }

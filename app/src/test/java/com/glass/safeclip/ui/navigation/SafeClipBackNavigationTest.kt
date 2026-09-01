@@ -77,6 +77,11 @@ class SafeClipBackNavigationTest {
     }
 
     @Test
+    fun liveRecordingBackGoesToHome() {
+        assertEquals(SafeClipScreen.Home, SafeClipBackNavigation.previousScreen(SafeClipScreen.LiveRecording))
+    }
+
+    @Test
     fun directSubmissionFormBackGoesToOriginalBrowser() {
         val browser = SafeClipScreen.VideoBrowser(VideoBrowserSource.SafeClip)
         val previous = SafeClipBackNavigation.previousScreen(
@@ -101,6 +106,24 @@ class SafeClipBackNavigationTest {
 
     @Test
     fun settingsBackGoesToHome() {
-        assertEquals(SafeClipScreen.Home, SafeClipBackNavigation.previousScreen(SafeClipScreen.Settings))
+        assertEquals(SafeClipScreen.Home, SafeClipBackNavigation.previousScreen(SafeClipScreen.Settings()))
+    }
+
+    @Test
+    fun settingsOpenedFromMyPageGoesBackToMyPage() {
+        assertEquals(
+            SafeClipScreen.MyPage,
+            SafeClipBackNavigation.previousScreen(SafeClipScreen.Settings(SafeClipScreen.MyPage))
+        )
+    }
+
+    @Test
+    fun myPageBackGoesToHome() {
+        assertEquals(SafeClipScreen.Home, SafeClipBackNavigation.previousScreen(SafeClipScreen.MyPage))
+    }
+
+    @Test
+    fun askBackGoesToMyPage() {
+        assertEquals(SafeClipScreen.MyPage, SafeClipBackNavigation.previousScreen(SafeClipScreen.Ask))
     }
 }

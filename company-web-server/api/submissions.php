@@ -11,6 +11,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $config = app_config();
 $limit = max(1, min((int)($config['max_submissions'] ?? 50), 100));
 
+if ((string)($_GET['mode'] ?? '') !== 'sample' && company_web_upstream_url($config) !== '') {
+    $response = upstream_company_payload($config, 'api/submissions.php');
+    unset($response['ok']);
+    $response['mode'] = 'upstream';
+    $response['videoBaseUrl'] = 'api/video.php';
+    if (($config['local_preview_enabled'] ?? false) === true) {
+        $response['previewBaseUrl'] = 'api/preview.php';
+    }
+    save_json_cache('submissions-cache.json', $response);
+    json_success($response);
+}
+
 if ((string)($_GET['mode'] ?? '') === 'sample') {
     $submissions = sample_submissions_from_folder($config, $limit);
     $response = [
@@ -84,6 +96,10 @@ $response = [
     'submissions' => $submissions,
     'kakaoMapJavascriptKey' => (string)($config['kakao_map_javascript_key'] ?? ''),
 ];
+$externalPreviewBaseUrl = trim((string)($config['external_preview_base_url'] ?? ''));
+if ($externalPreviewBaseUrl !== '') {
+    $response['previewBaseUrl'] = $externalPreviewBaseUrl;
+}
 save_json_cache('submissions-cache.json', $response);
 json_success($response);
 

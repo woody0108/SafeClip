@@ -29,7 +29,6 @@ object UserProfileDocument {
     private fun baseFields(profile: UserProfile): Map<String, Any?> {
         return mapOf(
             "uid" to profile.uid,
-            "guestId" to profile.guestId,
             "email" to profile.email,
             "displayName" to profile.displayName,
             "provider" to profile.provider

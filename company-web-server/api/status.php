@@ -28,6 +28,25 @@ if (in_array($status, ['보완 요청', '신고 결과'], true) && $companyComme
 }
 
 $config = app_config();
+if (company_web_upstream_url($config) !== '') {
+    $encodedInput = json_encode($input, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $response = upstream_http_request(
+        'POST',
+        company_web_upstream_url($config) . '/api/status.php',
+        ['Content-Type: application/json'],
+        $encodedInput === false ? '{}' : $encodedInput
+    );
+    $payload = decode_json_object($response['body']);
+    if ($response['status'] >= 400 || ($payload['ok'] ?? false) !== true) {
+        json_fail(
+            $response['status'] >= 400 ? $response['status'] : 502,
+            (string)($payload['error'] ?? 'NAS status update failed.')
+        );
+    }
+    unset($payload['ok']);
+    json_success($payload);
+}
+
 $updateMask = 'updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=companyComment';
 firestore_request(
     $config,

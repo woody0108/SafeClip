@@ -1,27 +1,38 @@
 package com.glass.safeclip.data.media
 
+import java.io.File
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafeClipMediaSaveLocationTest {
     @Test
-    fun captureAndClipUseSameAlbumName() {
-        assertEquals("SafeClip Captures", SafeClipMediaSaveLocation.albumName)
-    }
-
-    @Test
-    fun clipDisplayPathUsesSafeClipAlbum() {
+    fun allGeneratedMediaUsesDcimSafeClip() {
+        assertEquals("SafeClip", SafeClipMediaSaveLocation.albumName)
+        assertEquals("DCIM/SafeClip", SafeClipMediaSaveLocation.relativePath)
         assertEquals(
-            "Movies/SafeClip Captures/front_clip.mp4",
-            SafeClipMediaSaveLocation.videoClipDisplayPath("front_clip.mp4")
+            "DCIM/SafeClip/front_clip.mp4",
+            SafeClipMediaSaveLocation.displayPath("front_clip.mp4")
         )
     }
 
     @Test
-    fun eventFolderDisplayPathUsesSafeClipAlbum() {
+    fun publicDirectoryIsAlwaysSafeClipUnderDcim() {
         assertEquals(
-            "SafeClip Captures/front_capture.jpg",
-            SafeClipMediaSaveLocation.eventFolderDisplayPath("front_capture.jpg")
+            File("DCIM-root", "SafeClip"),
+            SafeClipMediaSaveLocation.publicDirectory(File("DCIM-root"))
         )
+    }
+
+    @Test
+    fun ensurePublicDirectoryCreatesAndReusesSafeClipFolder() {
+        val dcimDirectory = Files.createTempDirectory("safeclip-dcim").toFile()
+
+        assertTrue(SafeClipMediaSaveLocation.ensurePublicDirectory(dcimDirectory))
+        assertTrue(File(dcimDirectory, "SafeClip").isDirectory)
+        assertTrue(SafeClipMediaSaveLocation.ensurePublicDirectory(dcimDirectory))
+
+        dcimDirectory.deleteRecursively()
     }
 }

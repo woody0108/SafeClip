@@ -27,6 +27,12 @@ $requiredFiles = @(
     'api/asks.php',
     'api/diagnostics.php',
     'api/video.php',
+    'api/analysis.php',
+    'api/analysis-evidence.php',
+    'api/analysis_helpers.php',
+    'api/preview.php',
+    'tests/Check-AnalysisHelpers.php',
+    'tests/Check-VideoRequestHelpers.php',
     'data/.gitkeep'
 )
 
@@ -69,6 +75,13 @@ Assert-FileContains $appJs 'incidentDate' 'Admin UI must show incident date from
 Assert-FileContains $appJs 'incidentTime' 'Admin UI must show incident time from Firestore.'
 Assert-FileContains $submissionsPhp 'incidentLocationDetail' 'Submissions API must include location detail from Firestore.'
 Assert-FileContains $index 'detail-location-detail' 'Admin UI must show location detail in submission detail.'
+Assert-FileContains $index 'ai-analysis-button' 'Admin UI must expose the AI analysis button.'
+Assert-FileContains $index 'ai-evidence' 'Admin UI must expose the AI evidence area.'
+Assert-FileContains $index 'operation-mode' 'Admin UI must show whether it is using NAS or sample mode.'
+Assert-FileContains $appJs 'api/analysis\.php' 'Admin UI must call the AI analysis API.'
+Assert-FileContains $appJs 'renderAnalysis' 'Admin UI must render AI analysis state.'
+Assert-FileContains $appJs 'evidenceUrls' 'Admin UI must render only server-approved evidence URLs.'
+Assert-FileContains $appJs 'previewBaseUrl' 'Admin UI must use the PC-generated browser preview when configured.'
 Assert-FileContains $submissionsPhp 'incidentLatitude' 'Submissions API must include latitude from Firestore.'
 Assert-FileContains $submissionsPhp 'incidentLongitude' 'Submissions API must include longitude from Firestore.'
 Assert-FileContains $submissionsPhp 'kakaoMapJavascriptKey' 'Submissions API must expose the configured Kakao JavaScript key.'
@@ -79,6 +92,7 @@ Assert-FileContains $appJs 'fileSizeLabel' 'Admin UI must show Firestore file si
 Assert-FileContains $statusPhp 'allowedStatuses' 'Status API must allow the Korean fixed status list.'
 Assert-FileContains $statusPhp 'companyComment' 'Status API must write companyComment.'
 Assert-FileContains $statusPhp 'updatedAt' 'Status API must update updatedAt.'
+Assert-FileContains $statusPhp 'upstream_http_request' 'Local status API must proxy review changes to the NAS server.'
 Assert-FileContains $asksPhp "collectionId' => 'ask'" 'Ask API must read the ask collection.'
 Assert-FileContains $asksPhp 'questionType' 'Ask API must include the question type field.'
 Assert-FileContains $asksPhp 'answer' 'Ask API must write answers.'
@@ -96,6 +110,8 @@ Assert-FileContains $bootstrapPhp 'firebase_error_message' 'Bootstrap must expos
 Assert-FileContains $bootstrapPhp 'Firebase request failed:' 'Firestore API failures must include Firebase response details.'
 Assert-FileContains $videoPhp 'Range' 'Video API must support browser video seeking.'
 Assert-FileContains $videoPhp 'resolve_video_file_path' 'Video API must resolve files from the NAS upload storage folder.'
+Assert-FileContains $videoPhp 'proxy_upstream_video' 'Local video API must proxy NAS video Range requests.'
+Assert-FileContains (Join-Path $root 'api/preview.php') 'libx264' 'PC preview API must convert unsupported videos to H.264.'
 Assert-FileContains $bootstrapPhp 'SafeClipUpLoads' 'Video API must read from the NAS upload storage folder.'
 Assert-FileContains $bootstrapPhp 'RecursiveDirectoryIterator' 'Video API must search nested NAS date/time folders.'
 Assert-FileContains $bootstrapPhp 'jpg' 'Video API must allow submitted JPEG photos.'
@@ -110,6 +126,18 @@ Assert-FileContains $bootstrapPhp 'submission_attachments' 'Submissions API must
 Assert-FileContains $submissionsPhp 'raw' 'Submissions API must include raw Firestore fields for inspection.'
 Assert-FileContains $config 'service_account_json' 'Config must use a server-side Firebase service account file.'
 Assert-FileContains $config 'SafeClipUpLoads' 'Config example must include the NAS upload folder.'
+
+$analysisCheck = & php (Join-Path $root 'tests/Check-AnalysisHelpers.php')
+if ($LASTEXITCODE -ne 0 -or $analysisCheck -notmatch 'Analysis helper checks passed') {
+    throw 'Analysis helper checks failed.'
+}
+$analysisCheck
+
+$videoCheck = & php (Join-Path $root 'tests/Check-VideoRequestHelpers.php')
+if ($LASTEXITCODE -ne 0 -or $videoCheck -notmatch 'Video request helper checks passed') {
+    throw 'Video request helper checks failed.'
+}
+$videoCheck
 
 $indexContent = Get-Content -LiteralPath $index -Raw -Encoding UTF8
 $appContent = Get-Content -LiteralPath $appJs -Raw -Encoding UTF8

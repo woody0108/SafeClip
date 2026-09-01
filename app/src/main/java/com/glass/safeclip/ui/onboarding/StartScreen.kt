@@ -8,12 +8,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +49,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glass.safeclip.data.auth.AuthProviderOption
+import com.glass.safeclip.data.auth.EmailAuthInput
+import com.glass.safeclip.data.auth.EmailLoginInput
 import com.glass.safeclip.ui.components.GlassPanel
 import com.glass.safeclip.ui.components.PrimaryActionButton
 import com.glass.safeclip.ui.components.SafeClipScaffold
@@ -55,6 +61,10 @@ import com.glass.safeclip.ui.theme.SafeClipOrange
 import com.glass.safeclip.ui.theme.SafeClipSuccess
 import com.glass.safeclip.ui.theme.SafeClipSurface
 import com.glass.safeclip.ui.theme.SafeClipTextSecondary
+
+internal object StartScreenLayout {
+    val BrandVerticalOffset = (-52).dp
+}
 
 @Composable
 fun BootLoadingScreen() {
@@ -109,122 +119,123 @@ private fun SmoothLoadingDots() {
 
 @Composable
 fun StartScreen(
-    guestId: String,
     linkedDisplayName: String?,
     linkedEmail: String?,
     authMessage: String?,
-    onGoogleSignUp: () -> Unit,
-    onEmailSignUp: (String, String) -> Unit,
+    onGoogleLogin: () -> Unit,
+    onEmailLogin: (String, String) -> Unit,
     onStart: () -> Unit
 ) {
-    var showSignUpDialog by remember { mutableStateOf(false) }
-    var showEmailDialog by remember { mutableStateOf(false) }
+    var showLoginChoiceDialog by remember { mutableStateOf(false) }
+    var showEmailLoginDialog by remember { mutableStateOf(false) }
+    val hasLinkedAccount = !linkedDisplayName.isNullOrBlank() || !linkedEmail.isNullOrBlank()
+    val linkedAccountId = if (hasLinkedAccount) {
+        StartAccountText.from(
+            guestId = "",
+            displayName = linkedDisplayName,
+            email = linkedEmail
+        ).idLine
+    } else {
+        null
+    }
 
-    if (showSignUpDialog) {
-        SignUpDialog(
+    LaunchedEffect(hasLinkedAccount) {
+        if (hasLinkedAccount) {
+            showEmailLoginDialog = false
+        }
+    }
+
+    if (showLoginChoiceDialog) {
+        AuthChoiceDialog(
+            title = "로그인",
+            description = "가입한 계정으로 로그인하면 기존 제출 내역을 이어서 확인할 수 있습니다.",
+            googleText = AuthProviderOption.Google.loginText,
+            emailText = AuthProviderOption.Email.loginText,
             authMessage = authMessage,
-            onGoogleSignUp = {
-                showSignUpDialog = false
-                onGoogleSignUp()
+            onGoogle = {
+                showLoginChoiceDialog = false
+                onGoogleLogin()
             },
-            onEmailSignUp = {
-                showSignUpDialog = false
-                showEmailDialog = true
+            onEmail = {
+                showLoginChoiceDialog = false
+                showEmailLoginDialog = true
             },
-            onDismiss = { showSignUpDialog = false }
+            onDismiss = { showLoginChoiceDialog = false }
         )
     }
-    if (showEmailDialog) {
-        EmailSignUpDialog(
+    if (showEmailLoginDialog) {
+        EmailLoginDialog(
             authMessage = authMessage,
             onSubmit = { email, password ->
-                showEmailDialog = false
-                onEmailSignUp(email, password)
+                onEmailLogin(email, password)
             },
-            onDismiss = { showEmailDialog = false }
+            onDismiss = { showEmailLoginDialog = false }
         )
     }
 
     SafeClipScaffold {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.SpaceBetween
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                Spacer(modifier = Modifier.height(28.dp))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = StartScreenLayout.BrandVerticalOffset)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SafeClipLogoIcon(modifier = Modifier.size(46.dp))
-                        Text(
-                            text = "SafeClip",
-                            color = Color.White,
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    SafeClipLogoIcon(modifier = Modifier.size(54.dp))
                     Text(
-                        text = "블랙박스 영상을 쉽고 빠르게 제출",
-                        color = SafeClipCyan,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 28.sp,
-                        textAlign = TextAlign.Center
+                        text = "SafeClip",
+                        color = Color.White,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold
                     )
                 }
-
-                GlassPanel(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "USB-C 리더기와 microSD 카드를 연결한 뒤 영상을 확인하고 제출하세요.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 22.sp
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ConnectionStatusBox(
-                            title = "USB-C 연결",
-                            connected = false,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(86.dp)
-                        )
-                        ConnectionStatusBox(
-                            title = "microSD 인식",
-                            connected = false,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(86.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = "블랙박스 영상을 쉽고 빠르게 제출",
+                    color = SafeClipCyan,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 28.sp,
+                    textAlign = TextAlign.Center
+                )
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                GuestIdentityRow(
-                    guestId = guestId,
-                    linkedDisplayName = linkedDisplayName,
-                    linkedEmail = linkedEmail,
-                    onSignUp = { showSignUpDialog = true }
-                )
-                if (!authMessage.isNullOrBlank()) {
+                linkedAccountId?.let { idLine ->
+                    LinkedAccountIdRow(
+                        idLine = idLine,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showLoginChoiceDialog = true },
+                    enabled = !hasLinkedAccount,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, SafeClipCyan.copy(alpha = 0.85f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SafeClipCyan)
+                ) {
                     Text(
-                        text = authMessage,
-                        color = SafeClipCyan,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        textAlign = TextAlign.Center
+                        text = if (hasLinkedAccount) "로그인됨" else "로그인",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 PrimaryActionButton(
@@ -234,12 +245,40 @@ fun StartScreen(
                         .fillMaxWidth()
                         .height(64.dp)
                 )
-                Text(
-                    text = "원본 영상은 사용자가 선택할 때만 처리됩니다.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp
-                )
             }
+        }
+    }
+}
+
+@Composable
+private fun LinkedAccountIdRow(
+    idLine: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = SafeClipSurface.copy(alpha = 0.88f),
+        border = BorderStroke(1.dp, SafeClipBorder.copy(alpha = 0.75f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = idLine,
+                modifier = Modifier.weight(1f),
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "로그인됨",
+                color = SafeClipSuccess,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -273,17 +312,61 @@ fun ConnectingScreen() {
 }
 
 @Composable
-private fun GuestIdentityRow(
+private fun AccountActionRow(
     guestId: String,
     linkedDisplayName: String?,
     linkedEmail: String?,
     onSignUp: () -> Unit,
+    onLogin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accountText = StartAccountText.from(
         guestId = guestId,
         displayName = linkedDisplayName,
         email = linkedEmail
+    )
+    if (!accountText.signupEnabled && !accountText.loginEnabled) return
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        OutlinedButton(
+            onClick = onSignUp,
+            enabled = accountText.signupEnabled,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, SafeClipCyan.copy(alpha = 0.85f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = SafeClipCyan)
+        ) {
+            Text(text = "회원가입", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+        OutlinedButton(
+            onClick = onLogin,
+            enabled = accountText.loginEnabled,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, SafeClipBorder),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = SafeClipCyan)
+        ) {
+            Text(text = "로그인", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun GuestIdentityRow(
+    guestId: String,
+    linkedDisplayName: String?,
+    linkedEmail: String?,
+    authMessage: String?,
+    modifier: Modifier = Modifier
+) {
+    val accountText = StartAccountText.from(
+        guestId = guestId,
+        displayName = linkedDisplayName,
+        email = linkedEmail,
+        authMessage = authMessage
     )
 
     Surface(
@@ -304,33 +387,36 @@ private fun GuestIdentityRow(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            OutlinedButton(
-                onClick = onSignUp,
-                enabled = accountText.signupEnabled,
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SafeClipCyan.copy(alpha = 0.85f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = SafeClipCyan)
-            ) {
-                Text(text = accountText.actionText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            accountText.statusBadge?.let { badge ->
+                Text(
+                    text = badge,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SignUpDialog(
+private fun AuthChoiceDialog(
+    title: String,
+    description: String,
+    googleText: String,
+    emailText: String,
     authMessage: String?,
-    onGoogleSignUp: () -> Unit,
-    onEmailSignUp: () -> Unit,
+    onGoogle: () -> Unit,
+    onEmail: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "계정 연동") },
+        title = { Text(text = title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "Guest ID를 Google 또는 이메일 계정에 연결하면 나중에 다시 설치해도 제출 내역을 찾기 쉬워집니다.",
+                    text = description,
                     lineHeight = 20.sp
                 )
                 if (!authMessage.isNullOrBlank()) {
@@ -342,17 +428,17 @@ private fun SignUpDialog(
                     )
                 }
                 PrimaryActionButton(
-                    text = "Google로 계속하기",
-                    onClick = onGoogleSignUp,
+                    text = googleText,
+                    onClick = onGoogle,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedButton(
-                    onClick = onEmailSignUp,
+                    onClick = onEmail,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(1.dp, SafeClipBorder)
                 ) {
-                    Text(text = "이메일로 가입하기", fontWeight = FontWeight.Bold)
+                    Text(text = emailText, fontWeight = FontWeight.Bold)
                 }
             }
         },
@@ -367,11 +453,14 @@ private fun SignUpDialog(
 @Composable
 private fun EmailSignUpDialog(
     authMessage: String?,
-    onSubmit: (String, String) -> Unit,
+    onSubmit: (String, String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var displayName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordConfirmation by remember { mutableStateOf("") }
+    var validationMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -386,6 +475,101 @@ private fun EmailSignUpDialog(
                     Text(
                         text = authMessage,
                         color = SafeClipCyan,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+                if (!validationMessage.isNullOrBlank()) {
+                    Text(
+                        text = validationMessage.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text(text = "이름") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text(text = "이메일") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(text = "비밀번호") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = passwordConfirmation,
+                    onValueChange = { passwordConfirmation = it },
+                    label = { Text(text = "비밀번호 확인") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val input = EmailAuthInput.create(
+                        displayName = displayName,
+                        email = email,
+                        password = password,
+                        passwordConfirmation = passwordConfirmation
+                    )
+                    if (input.errorMessage != null) {
+                        validationMessage = input.errorMessage
+                    } else {
+                        onSubmit(input.displayName, input.email, input.password, passwordConfirmation)
+                    }
+                }
+            ) {
+                Text(text = "가입하기", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "취소")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EmailLoginDialog(
+    authMessage: String?,
+    onSubmit: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var validationMessage by remember { mutableStateOf<String?>(null) }
+    val loginMessage = validationMessage ?: EmailLoginDialogMessage.from(authMessage)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "이메일 로그인") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "가입한 이메일과 비밀번호로 로그인합니다.",
+                    lineHeight = 20.sp
+                )
+                if (!loginMessage.isNullOrBlank()) {
+                    Text(
+                        text = loginMessage.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     )
@@ -408,8 +592,17 @@ private fun EmailSignUpDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSubmit(email, password) }) {
-                Text(text = "가입하기", fontWeight = FontWeight.Bold)
+            TextButton(
+                onClick = {
+                    val input = EmailLoginInput.create(email = email, password = password)
+                    if (input.errorMessage != null) {
+                        validationMessage = input.errorMessage
+                    } else {
+                        onSubmit(input.email, input.password)
+                    }
+                }
+            ) {
+                Text(text = "로그인", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
