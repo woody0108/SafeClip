@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.glass.safeclip.data.media.EventClipAssembler
 import com.glass.safeclip.data.media.EventClipFileName
+import com.glass.safeclip.data.plate.PlateEventAnalyzer
+import com.glass.safeclip.data.plate.PlateTextParser
 import com.glass.safeclip.data.recording.EventLocation
 import com.glass.safeclip.data.recording.EventLocationProvider
 import com.glass.safeclip.data.recording.EventWindowPlanner
@@ -34,13 +36,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+private data class EventExportSummary(
+    val firstUri: String?,
+    val successCount: Int,
+    val failureCount: Int,
+    val isShort: Boolean,
+    val isSplit: Boolean
+)
+
 class LiveRecordingViewModel(
     private val controller: RecordingSessionController,
     private val segments: RollingSegmentRepository,
     private val assembler: EventClipAssembler,
     private val locationProvider: EventLocationProvider = EventLocationProvider.None,
     private val clock: () -> Long = SystemClock::elapsedRealtime,
-    private val wallClock: () -> Long = System::currentTimeMillis
+    private val wallClock: () -> Long = System::currentTimeMillis,
+    private val plateAnalyzer: PlateEventAnalyzer = PlateEventAnalyzer.None
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LiveRecordingUiState(freeBytes = segments.availableBytes()))
     val state: StateFlow<LiveRecordingUiState> = mutableState.asStateFlow()
@@ -107,7 +118,10 @@ class LiveRecordingViewModel(
         controller.stop()
     }
 
-    fun requestEvent(elapsedMs: Long = clock()) {
+    fun requestEvent(
+        elapsedMs: Long = clock(),
+        sideDurationMs: Long = RemoteKeyRouting.SHORT_EVENT_SIDE_DURATION_MS
+    ) {
         if (state.value.phase != RecordingPhase.Recording) return
         val sessionStart = recordingStartedAt ?: return
         val timeAnchor = recordingTimeAnchor ?: return
@@ -122,10 +136,12 @@ class LiveRecordingViewModel(
             triggerEpochMs = triggerEpochMs,
             sessionStartElapsedMs = sessionStart,
             timeAnchor = timeAnchor,
+            sideDurationMs = sideDurationMs,
             status = EventWorkStatus.CapturingAfter,
-            message = "이후 1분을 녹화하고 있습니다."
+            message = "이후 ${sideDurationMs / 60_000L}분을 녹화하고 있습니다."
         )
         mutableState.update { it.copy(events = it.events + event) }
+        analyzePlate(event)
     }
 
     fun setAudioEnabled(enabled: Boolean) {
@@ -144,8 +160,23 @@ class LiveRecordingViewModel(
         mutableState.update { it.copy(remoteTestEnabled = enabled, lastRemoteKeyLabel = null) }
     }
 
+    fun confirmPlate(eventId: String, input: String): Boolean {
+        val normalized = PlateTextParser.normalizeConfirmed(input) ?: return false
+        mutableState.update { current ->
+            current.copy(events = current.events.map { event ->
+                if (event.id == eventId) {
+                    event.copy(plateStatus = PlateAnalysisStatus.Confirmed, confirmedPlate = normalized)
+                } else {
+                    event
+                }
+            })
+        }
+        return true
+    }
+
     fun onRemoteKey(keyCode: Int, @Suppress("UNUSED_PARAMETER") elapsedMs: Long): Boolean {
         val label = remoteKeyLabel(keyCode) ?: return false
+        val sideDurationMs = RemoteKeyRouting.eventSideDurationMs(keyCode) ?: return false
         val current = state.value
         if (current.phase == RecordingPhase.Ready && current.remoteTestEnabled) {
             mutableState.update { it.copy(lastRemoteKeyLabel = "$label 인식") }
@@ -154,7 +185,7 @@ class LiveRecordingViewModel(
         val recordingElapsedMs = clock()
         if (current.phase != RecordingPhase.Recording || !debouncer.accept(recordingElapsedMs)) return false
         // KeyEvent.eventTime은 절전 시간을 제외하므로 녹화 기준 시계와 섞지 않습니다.
-        requestEvent(recordingElapsedMs)
+        requestEvent(recordingElapsedMs, sideDurationMs)
         return true
     }
 
@@ -176,6 +207,7 @@ class LiveRecordingViewModel(
                     recordingTimeAnchor = RecordingTimeAnchor(clock(), wallClock())
                     stoppingSessionStart = null
                     debouncer.reset()
+                    plateAnalyzer.startSession()
                 }
                 mutableState.update {
                     it.copy(phase = if (screenActive) RecordingPhase.Recording else RecordingPhase.Stopping)
@@ -185,10 +217,12 @@ class LiveRecordingViewModel(
             is RecordingEngineEvent.SegmentFinalized -> completeReadyEvents(event.segment.endElapsedMs)
             is RecordingEngineEvent.Error -> {
                 ticker?.cancel()
+                plateAnalyzer.stopSession()
                 mutableState.update { it.copy(phase = RecordingPhase.Error, message = event.message) }
             }
             RecordingEngineEvent.Stopped -> {
                 ticker?.cancel()
+                plateAnalyzer.stopSession()
                 val sessionStart = recordingStartedAt
                 stoppingSessionStart = sessionStart
                 val availableEnd = sessionStart?.let { start ->
@@ -206,7 +240,7 @@ class LiveRecordingViewModel(
     private fun completeReadyEvents(availableEnd: Long, force: Boolean = false) {
         state.value.events
             .filter { it.status == EventWorkStatus.CapturingAfter }
-            .filter { force || availableEnd >= it.triggerElapsedMs + 60_000L }
+            .filter { force || availableEnd >= it.triggerElapsedMs + it.sideDurationMs }
             .forEach { work -> exportEvent(work, availableEnd) }
     }
 
@@ -223,23 +257,57 @@ class LiveRecordingViewModel(
                         triggerElapsedMs = work.triggerElapsedMs,
                         availableEndElapsedMs = availableEnd,
                         segments = sessionSegments,
-                        timeAnchor = work.timeAnchor
+                        timeAnchor = work.timeAnchor,
+                        sideDurationMs = work.sideDurationMs
                     )
-                    assembler.assemble(
-                        plan,
-                        EventClipFileName.event(
-                            Instant.ofEpochMilli(work.triggerEpochMs),
-                            ZoneId.of("Asia/Seoul")
-                        ),
-                        eventLocations.remove(work.id)?.await()
-                    ).getOrThrow() to plan.isShort
+                    val splitOutput = work.sideDurationMs > RemoteKeyRouting.SHORT_EVENT_SIDE_DURATION_MS
+                    val plans = if (splitOutput) {
+                        EventWindowPlanner.split(plan, RemoteKeyRouting.SHORT_EVENT_SIDE_DURATION_MS)
+                    } else {
+                        listOf(plan)
+                    }
+                    val instant = Instant.ofEpochMilli(work.triggerEpochMs)
+                    val zoneId = ZoneId.of("Asia/Seoul")
+                    val location = eventLocations.remove(work.id)?.await()
+                    val results = plans.mapIndexed { index, partPlan ->
+                        val displayName = if (splitOutput) {
+                            EventClipFileName.eventPart(instant, index + 1, zoneId)
+                        } else {
+                            EventClipFileName.event(instant, zoneId)
+                        }
+                        runCatching {
+                            assembler.assemble(partPlan, displayName, location).getOrThrow()
+                        }
+                    }
+                    val successfulResults = results.filter(Result<*>::isSuccess)
+                    if (successfulResults.isEmpty()) {
+                        throw results.firstNotNullOfOrNull(Result<*>::exceptionOrNull)
+                            ?: IllegalStateException("이벤트 저장에 실패했습니다.")
+                    }
+                    EventExportSummary(
+                        firstUri = successfulResults.first().getOrNull()?.toString(),
+                        successCount = successfulResults.size,
+                        failureCount = results.size - successfulResults.size,
+                        isShort = plan.isShort,
+                        isSplit = splitOutput
+                    )
                 }
-            }.onSuccess { (uri, short) ->
+            }.onSuccess { summary ->
+                val message = when {
+                    summary.failureCount > 0 ->
+                        "이벤트 영상 ${summary.successCount}개 저장, ${summary.failureCount}개 저장 실패"
+                    summary.isSplit && summary.isShort ->
+                        "짧은 이벤트 영상 ${summary.successCount}개가 저장되었습니다."
+                    summary.isSplit ->
+                        "이벤트 영상 ${summary.successCount}개가 저장되었습니다."
+                    summary.isShort -> "짧은 이벤트 영상이 저장되었습니다."
+                    else -> "이벤트 영상이 저장되었습니다."
+                } + " (각 원본 + 시간 표시 사본)"
                 updateEvent(
                     work.id,
                     EventWorkStatus.Completed,
-                    if (short) "짧은 이벤트 영상이 저장되었습니다." else "이벤트 영상이 저장되었습니다.",
-                    uri.toString()
+                    message,
+                    summary.firstUri
                 )
             }.onFailure { error ->
                 updateEvent(work.id, EventWorkStatus.Failed, eventErrorMessage(error))
@@ -276,6 +344,40 @@ class LiveRecordingViewModel(
         }
     }
 
+    private fun analyzePlate(work: EventWorkUi) {
+        mutableState.update { current ->
+            current.copy(events = current.events.map {
+                if (it.id == work.id) it.copy(plateStatus = PlateAnalysisStatus.Analyzing) else it
+            })
+        }
+        viewModelScope.launch {
+            runCatching {
+                plateAnalyzer.analyzeEvent(work.id, work.triggerElapsedMs, work.triggerEpochMs)
+            }.onSuccess { result ->
+                mutableState.update { current ->
+                    current.copy(events = current.events.map { event ->
+                        if (event.id != work.id) event else event.copy(
+                            plateStatus = if (result.candidates.isEmpty()) {
+                                PlateAnalysisStatus.NoCandidate
+                            } else {
+                                PlateAnalysisStatus.CandidateFound
+                            },
+                            plateCandidates = result.candidates,
+                            plateContextImageUri = result.contextImageUri,
+                            plateCropImageUri = result.plateImageUri
+                        )
+                    })
+                }
+            }.onFailure {
+                mutableState.update { current ->
+                    current.copy(events = current.events.map { event ->
+                        if (event.id == work.id) event.copy(plateStatus = PlateAnalysisStatus.Failed) else event
+                    })
+                }
+            }
+        }
+    }
+
     private fun updateEvent(id: String, status: EventWorkStatus, message: String, uri: String? = null) {
         mutableState.update { current ->
             current.copy(events = current.events.map { if (it.id == id) it.copy(status = status, message = message, outputUri = uri) else it })
@@ -304,5 +406,6 @@ class LiveRecordingViewModel(
 
     override fun onCleared() {
         leaveScreen()
+        plateAnalyzer.close()
     }
 }

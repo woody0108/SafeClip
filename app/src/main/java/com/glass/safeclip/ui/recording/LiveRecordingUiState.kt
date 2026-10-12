@@ -5,6 +5,7 @@ import com.glass.safeclip.data.recording.RecordingTimeAnchor
 
 enum class RecordingPhase { Ready, Preparing, Recording, Stopping, Error }
 enum class EventWorkStatus { CapturingAfter, Exporting, Completed, Failed }
+enum class PlateAnalysisStatus { Idle, Analyzing, CandidateFound, Confirmed, NoCandidate, Failed }
 
 data class EventWorkUi(
     val id: String,
@@ -12,9 +13,15 @@ data class EventWorkUi(
     val triggerEpochMs: Long,
     val sessionStartElapsedMs: Long,
     val timeAnchor: RecordingTimeAnchor,
+    val sideDurationMs: Long,
     val status: EventWorkStatus,
     val message: String,
-    val outputUri: String? = null
+    val outputUri: String? = null,
+    val plateStatus: PlateAnalysisStatus = PlateAnalysisStatus.Idle,
+    val plateCandidates: List<String> = emptyList(),
+    val confirmedPlate: String? = null,
+    val plateContextImageUri: String? = null,
+    val plateCropImageUri: String? = null
 )
 
 data class LiveRecordingUiState(

@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Range
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
@@ -20,6 +21,7 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.google.common.util.concurrent.ListenableFuture
+import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.channels.BufferOverflow
@@ -30,7 +32,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 class CameraXRecordingSessionController(
     private val context: Context,
     private val segmentRepository: RollingSegmentRepository,
-    private val clock: () -> Long = SystemClock::elapsedRealtime
+    private val clock: () -> Long = SystemClock::elapsedRealtime,
+    private val frameAnalyzer: ImageAnalysis.Analyzer? = null
 ) : RecordingSessionController {
     private val mutableEvents = MutableSharedFlow<RecordingEngineEvent>(
         extraBufferCapacity = 16,
@@ -40,6 +43,7 @@ class CameraXRecordingSessionController(
 
     private val mainExecutor = ContextCompat.getMainExecutor(context)
     private val handler = Handler(Looper.getMainLooper())
+    private val analysisExecutor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
@@ -71,9 +75,26 @@ class CameraXRecordingSessionController(
             .setTargetFrameRate(Range(30, 30))
             .build()
         val preview = Preview.Builder().build().also { it.setSurfaceProvider(surfaceProvider) }
+        val analysis = frameAnalyzer?.let { analyzer ->
+            ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also { it.setAnalyzer(analysisExecutor, analyzer) }
+        }
 
         provider.unbindAll()
-        provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture)
+        if (analysis != null) {
+            runCatching {
+                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture, analysis)
+            }.getOrElse {
+                // 일부 기기는 세 가지 UseCase 조합을 지원하지 않습니다. 이때 녹화를 우선합니다.
+                analysis.clearAnalyzer()
+                provider.unbindAll()
+                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture)
+            }
+        } else {
+            provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture)
+        }
         cameraProvider = provider
         videoCapture = capture
         return selected

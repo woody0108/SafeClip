@@ -19,4 +19,14 @@ class EventClipFileNameTest {
             EventClipFileName.muted(name)
         )
     }
+    @Test
+    fun numberedEventPartNameIncludesTwoDigitSequence() {
+        val name = EventClipFileName.eventPart(
+            Instant.parse("2026-08-25T03:04:05Z"),
+            partNumber = 1,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals("SC_EVENT_20260825_030405_01.mp4", name)
+    }
 }

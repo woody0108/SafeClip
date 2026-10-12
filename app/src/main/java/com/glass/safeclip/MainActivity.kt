@@ -95,6 +95,7 @@ import com.glass.safeclip.ui.onboarding.StartScreen
 import com.glass.safeclip.ui.recording.LiveRecordingScreen
 import com.glass.safeclip.ui.recording.LiveRecordingViewModel
 import com.glass.safeclip.ui.recording.LiveRecordingViewModelFactory
+import com.glass.safeclip.ui.recording.RemoteKeyRouting
 import com.glass.safeclip.ui.settings.AskScreen
 import com.glass.safeclip.ui.settings.MyPageScreen
 import com.glass.safeclip.ui.settings.SettingsPermissionItems
@@ -119,8 +120,10 @@ class MainActivity : ComponentActivity() {
     private var liveRecordingKeyHandler: ((Int, Long) -> Boolean)? = null
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (event.repeatCount == 0 &&
-            liveRecordingKeyHandler?.invoke(keyCode, event.eventTime) == true
+        val handler = liveRecordingKeyHandler
+        if (handler != null && RemoteKeyRouting.consumeKeyDown(keyCode, event.repeatCount) {
+                handler(keyCode, event.eventTime)
+            }
         ) {
             return true
         }
@@ -878,6 +881,7 @@ class MainActivity : ComponentActivity() {
                             onQualityChange = liveViewModel::setQuality,
                             onAudioChange = liveViewModel::setAudioEnabled,
                             onRemoteTestChange = liveViewModel::setRemoteTestEnabled,
+                            onPlateConfirm = liveViewModel::confirmPlate,
                             onBack = {
                                 liveViewModel.leaveScreen()
                                 screen = SafeClipScreen.Home

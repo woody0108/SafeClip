@@ -21,14 +21,21 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,11 +53,46 @@ fun LiveRecordingScreen(
     onQualityChange: (RecordingQuality) -> Unit,
     onAudioChange: (Boolean) -> Unit,
     onRemoteTestChange: (Boolean) -> Unit,
+    onPlateConfirm: (String, String) -> Boolean,
     onBack: () -> Unit,
     onPreviewReady: (Preview.SurfaceProvider) -> Unit
 ) {
     val recording = state.phase == RecordingPhase.Recording
+    var selectedPlateEvent by remember { mutableStateOf<EventWorkUi?>(null) }
+    var plateInput by remember { mutableStateOf("") }
+    var plateInputError by remember { mutableStateOf(false) }
     LiveRecordingWindowEffect(recording)
+
+    selectedPlateEvent?.let { event ->
+        AlertDialog(
+            onDismissRequest = { selectedPlateEvent = null },
+            title = { Text("번호판 후보 확인") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("기기 내 OCR이 찾은 후보입니다. 원본 사진을 확인하고 수정하세요.")
+                    OutlinedTextField(
+                        value = plateInput,
+                        onValueChange = { plateInput = it; plateInputError = false },
+                        label = { Text("확인한 번호판") },
+                        isError = plateInputError,
+                        supportingText = if (plateInputError) {
+                            { Text("숫자 2~3자리 + 한글 + 숫자 4자리 형식으로 입력하세요.") }
+                        } else null,
+                        singleLine = true
+                    )
+                    Text("전체 장면과 번호판 영역 사진은 DCIM/SafeClip에 저장됩니다.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (onPlateConfirm(event.id, plateInput)) selectedPlateEvent = null else plateInputError = true
+                }) { Text("확인") }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedPlateEvent = null }) { Text("취소") }
+            }
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
@@ -155,6 +197,32 @@ fun LiveRecordingScreen(
             }
             state.events.takeLast(4).forEach { event ->
                 Text(event.message, color = if (event.status == EventWorkStatus.Failed) Color(0xFFFFB4AB) else Color.White)
+                Text(
+                    text = when (event.plateStatus) {
+                        PlateAnalysisStatus.Idle -> "번호판 분석 대기"
+                        PlateAnalysisStatus.Analyzing -> "번호판 후보 분석 중"
+                        PlateAnalysisStatus.CandidateFound ->
+                            "번호판 후보: ${event.plateCandidates.joinToString()} (확인 필요)"
+                        PlateAnalysisStatus.Confirmed -> "확인한 번호판: ${event.confirmedPlate}"
+                        PlateAnalysisStatus.NoCandidate -> "번호판 후보를 찾지 못했습니다."
+                        PlateAnalysisStatus.Failed -> "번호판 분석에 실패했습니다. 영상은 정상 저장됩니다."
+                    },
+                    color = if (event.plateStatus == PlateAnalysisStatus.CandidateFound) {
+                        Color(0xFF50D5FF)
+                    } else {
+                        Color(0xFFB7D5EA)
+                    }
+                )
+                if (event.plateStatus == PlateAnalysisStatus.CandidateFound) {
+                    OutlinedButton(
+                        onClick = {
+                            selectedPlateEvent = event
+                            plateInput = event.plateCandidates.firstOrNull().orEmpty()
+                            plateInputError = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("후보 확인") }
+                }
             }
         }
     }

@@ -1,37 +1,70 @@
 package com.glass.safeclip.data.media
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
-import android.text.Spannable
-import android.text.SpannableString
-import android.text.style.BackgroundColorSpan
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
 import androidx.annotation.OptIn
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.StaticOverlaySettings
-import androidx.media3.effect.TextOverlay
 
 @OptIn(UnstableApi::class)
 class EventTimestampOverlay(
-    private val startEpochMillis: Long
-) : TextOverlay() {
+    startEpochMillis: Long,
+    private val padding: TimestampBandPadding
+) : BitmapOverlay() {
+    private val clock = EventTimestampClock(startEpochMillis)
     private val settings = StaticOverlaySettings.Builder()
-        .setBackgroundFrameAnchor(0.96f, -0.92f)
-        .setOverlayFrameAnchor(1f, -1f)
-        .setScale(0.42f, 0.42f)
+        .setBackgroundFrameAnchor(-1f, 1f)
+        .setOverlayFrameAnchor(-1f, 1f)
         .build()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    }
+    private var bitmap: Bitmap? = null
+    private var renderedSecond: Long? = null
 
-    override fun getText(presentationTimeUs: Long): SpannableString {
-        val text = SpannableString(
-            " ${EventVideoTimestamp.format(startEpochMillis + presentationTimeUs / 1_000L)} "
-        )
-        text.setSpan(ForegroundColorSpan(Color.WHITE), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        text.setSpan(BackgroundColorSpan(Color.argb(176, 0, 0, 0)), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        text.setSpan(StyleSpan(Typeface.BOLD), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return text
+    override fun getBitmap(presentationTimeUs: Long): Bitmap {
+        val layout = padding.layout
+        var band = bitmap
+        if (band == null || band.width != layout.width || band.height != layout.bandHeight) {
+            band?.recycle()
+            band = Bitmap.createBitmap(layout.width, layout.bandHeight, Bitmap.Config.ARGB_8888)
+            bitmap = band
+            renderedSecond = null
+        }
+        val epochMillis = clock.epochMillisAt(presentationTimeUs)
+        val second = Math.floorDiv(epochMillis, 1_000L)
+        if (renderedSecond != second) {
+            band.eraseColor(Color.WHITE)
+            val canvas = Canvas(band)
+            val text = "촬영일시: ${EventVideoTimestamp.format(epochMillis)}"
+            val inset = layout.bandHeight * 0.2f
+            paint.textSize = layout.bandHeight * 0.52f
+            val availableWidth = layout.width - inset * 2
+            val textWidth = paint.measureText(text)
+            if (textWidth > availableWidth) paint.textSize *= availableWidth / textWidth
+            val metrics = paint.fontMetrics
+            val baseline = (layout.bandHeight - metrics.ascent - metrics.descent) / 2f
+            canvas.drawText(text, inset, baseline, paint)
+            renderedSecond = second
+        }
+        return band
     }
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings = settings
+
+    override fun release() {
+        try {
+            super.release()
+        } finally {
+            bitmap?.recycle()
+            bitmap = null
+            renderedSecond = null
+        }
+    }
 }

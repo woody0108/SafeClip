@@ -11,6 +11,16 @@ object EventClipFileName {
         return "SC_EVENT_${formatter.withZone(zoneId).format(instant)}.mp4"
     }
 
+    fun eventPart(
+        instant: Instant,
+        partNumber: Int,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): String {
+        require(partNumber > 0) { "Part number must be positive." }
+        val base = event(instant, zoneId).removeSuffix(".mp4")
+        return "${base}_${partNumber.toString().padStart(2, '0')}.mp4"
+    }
+
     fun muted(originalName: String): String {
         val base = originalName.removeSuffix(".mp4")
         return "${base}_MUTED.mp4"

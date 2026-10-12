@@ -75,4 +75,44 @@ class EventWindowPlannerTest {
 
         assertEquals(1_788_000_030_000, plan.epochMillisAt(130_000))
     }
+
+    @Test
+    fun fiveMinuteEventUsesFiveMinutesBeforeAndAfterTrigger() {
+        val longRecording = (0 until 15).map { index ->
+            val start = index * 60_000L
+            RollingSegment("segment-$index", "file:///segment-$index.mp4", start, start + 60_000L, false)
+        }
+
+        val plan = EventWindowPlanner.plan(
+            triggerElapsedMs = 600_000L,
+            availableEndElapsedMs = 900_000L,
+            segments = longRecording,
+            sideDurationMs = 300_000L
+        )
+
+        assertEquals(300_000L, plan.windowStartElapsedMs)
+        assertEquals(900_000L, plan.windowEndElapsedMs)
+        assertFalse(plan.isShort)
+        assertEquals(10, plan.parts.size)
+    }
+    @Test
+    fun longEventPlanSplitsIntoOneMinutePlans() {
+        val longRecording = (0 until 10).map { index ->
+            val start = index * 60_000L
+            RollingSegment("segment-$index", "file:///segment-$index.mp4", start, start + 60_000L, false)
+        }
+        val plan = EventWindowPlanner.plan(
+            triggerElapsedMs = 300_000L,
+            availableEndElapsedMs = 600_000L,
+            segments = longRecording,
+            sideDurationMs = 300_000L
+        )
+
+        val chunks = EventWindowPlanner.split(plan, maxDurationMs = 60_000L)
+
+        assertEquals(10, chunks.size)
+        assertEquals((0 until 10).map { it * 60_000L }, chunks.map { it.windowStartElapsedMs })
+        assertEquals((1..10).map { it * 60_000L }, chunks.map { it.windowEndElapsedMs })
+        assertTrue(chunks.all { it.windowEndElapsedMs - it.windowStartElapsedMs <= 60_000L })
+    }
 }
